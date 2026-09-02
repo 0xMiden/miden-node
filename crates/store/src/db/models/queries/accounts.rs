@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::num::NonZeroUsize;
 use std::ops::RangeInclusive;
 
+use diesel::dsl::max;
 use diesel::prelude::{Queryable, QueryableByName};
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::sqlite::Sqlite;
@@ -52,7 +53,7 @@ use crate::COMPONENT;
 use crate::db::models::conv::{SqlTypeConvert, nonce_to_raw_sql, raw_sql_to_nonce};
 #[cfg(test)]
 use crate::db::models::vec_raw_try_into;
-use crate::db::{AccountVaultValue, schema};
+use crate::db::{AccountVaultCursor, AccountVaultValue, AccountVaultValuesPage, schema};
 use crate::errors::DatabaseError;
 
 mod at_block;
@@ -561,6 +562,98 @@ pub(crate) fn select_account_vault_assets(
     };
 
     Ok((last_block_included, values))
+}
+
+/// Selects a bounded page containing the final update at `block_range.end()` for every vault key
+/// changed within the inclusive block range.
+///
+/// Vault rows are valid in `[block_num, valid_until)`. Requiring `valid_until > block_to` removes
+/// intermediate updates while retaining a historical value that was superseded after the target.
+/// Results use the table's `(account_id, block_num, vault_key)` primary-key order so they can be
+/// continued with a stable keyset cursor without response-size accounting.
+pub(crate) fn select_account_vault_updates_v2(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_range: RangeInclusive<BlockNumber>,
+    cursor: Option<AccountVaultCursor>,
+    page_size: NonZeroUsize,
+) -> Result<AccountVaultValuesPage, DatabaseError> {
+    use schema::account_vault_assets as t;
+
+    if !account_id.is_public() {
+        return Err(DatabaseError::AccountNotPublic(account_id));
+    }
+
+    if block_range.is_empty() {
+        return Err(DatabaseError::InvalidBlockRange {
+            from: *block_range.start(),
+            to: *block_range.end(),
+        });
+    }
+
+    let target_block = *block_range.end();
+    let block_from = block_range.start().to_raw_sql();
+    let block_to = target_block.to_raw_sql();
+
+    // Check the retention horizon before loading the page. This read establishes the SQLite
+    // transaction's snapshot, so the page query below observes the same chain tip and pruning
+    // state. Rejecting here avoids loading a page that would be discarded as incomplete.
+    let chain_tip =
+        SelectDsl::select(schema::block_headers::table, max(schema::block_headers::block_num))
+            .get_result::<Option<i64>>(conn)?
+            .ok_or_else(|| {
+                DatabaseError::DataCorrupted("block headers table is empty".to_owned())
+            })?;
+    let chain_tip = BlockNumber::from_raw_sql(chain_tip)?;
+    let oldest_available = chain_tip
+        .checked_sub(HISTORICAL_BLOCK_RETENTION)
+        .unwrap_or(BlockNumber::GENESIS);
+    if target_block < oldest_available {
+        return Err(DatabaseError::BlockPruned {
+            block_num: target_block,
+            oldest_available,
+        });
+    }
+
+    let mut query = SelectDsl::select(t::table, (t::block_num, t::vault_key, t::asset))
+        .filter(t::account_id.eq(account_id.to_bytes()))
+        .filter(t::block_num.ge(block_from))
+        .filter(t::block_num.le(block_to))
+        .filter(t::valid_until.gt(block_to))
+        .into_boxed();
+
+    if let Some(cursor) = cursor {
+        let cursor_block = cursor.block_num.to_raw_sql();
+        let cursor_key: Word = cursor.vault_key.into();
+        query = query.filter(
+            t::block_num
+                .gt(cursor_block)
+                .or(t::block_num.eq(cursor_block).and(t::vault_key.gt(cursor_key.to_bytes()))),
+        );
+    }
+
+    let limit = page_size.get();
+    let query_limit = i64::try_from(limit.saturating_add(1)).expect("page size fits within i64");
+    let mut raw = query
+        .order((t::block_num.asc(), t::vault_key.asc()))
+        .limit(query_limit)
+        .load::<(i64, Vec<u8>, Option<Vec<u8>>)>(conn)?;
+
+    let has_more = raw.len() > limit;
+    raw.truncate(limit);
+    let values = raw
+        .into_iter()
+        .map(AccountVaultValue::from_raw_row)
+        .collect::<Result<Vec<_>, DatabaseError>>()?;
+    let next_cursor = has_more.then(|| {
+        let last = values.last().expect("a page with more rows cannot be empty");
+        AccountVaultCursor {
+            block_num: last.block_num,
+            vault_key: last.vault_key,
+        }
+    });
+
+    Ok(AccountVaultValuesPage { values, next_cursor })
 }
 
 /// Query vault assets at a specific block by finding the most recent update for each `vault_key`.

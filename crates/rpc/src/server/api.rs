@@ -90,6 +90,7 @@ mod submit_proven_tx_batch;
 mod subscription;
 mod sync_account_storage_maps;
 mod sync_account_vault;
+mod sync_account_vault_v2;
 mod sync_chain_mmr;
 mod sync_notes;
 mod sync_nullifiers;
@@ -291,7 +292,9 @@ fn database_error_to_status(err: &DatabaseError) -> Status {
         | DatabaseError::AccountsNotFoundInDb(_)
         | DatabaseError::AccountNotPublic(_) => Status::not_found(message),
         DatabaseError::TransactionPageExceedsPayloadLimit { .. } => Status::out_of_range(message),
-        DatabaseError::RangeBeyondTip(_) => Status::invalid_argument(message),
+        DatabaseError::RangeBeyondTip(_) | DatabaseError::BlockPruned { .. } => {
+            Status::invalid_argument(message)
+        },
         _ => Status::internal(message),
     }
 }
@@ -355,11 +358,22 @@ static RPC_LIMITS: LazyLock<proto::rpc::RpcLimits> = LazyLock::new(|| {
 #[cfg(test)]
 mod tests {
     use miden_node_proto::generated::server::rpc_api::GetLimits;
+    use miden_protocol::block::BlockNumber;
 
     use super::*;
 
     #[test]
     fn get_limits_decodes_unit_request() {
         assert_eq!(RpcService::decode(()).unwrap(), ());
+    }
+
+    #[test]
+    fn block_pruned_database_error_is_invalid_argument() {
+        let status = database_error_to_status(&DatabaseError::BlockPruned {
+            block_num: BlockNumber::from(49),
+            oldest_available: BlockNumber::from(50),
+        });
+
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
     }
 }

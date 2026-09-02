@@ -1,10 +1,10 @@
+use std::collections::BTreeSet;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
 use futures::TryFutureExt;
-use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_store::state::State;
 use miden_node_tracing::spawn::spawn_blocking_in_current_span;
 use miden_node_tracing::{
@@ -18,6 +18,7 @@ use miden_node_tracing::{
 use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::batch::{BatchId, ProposedBatch, ProvenBatch};
+use miden_protocol::note::NoteId;
 use miden_protocol::transaction::TransactionId;
 use miden_tx_batch::BatchExecutor;
 use tokio::task::{JoinError, JoinSet};
@@ -264,7 +265,6 @@ impl BatchJob {
 
         let result = self
             .get_batch_inputs(batch)
-            .and_then(|(txs, inputs)| Self::propose_batch(txs, inputs))
             .inspect_ok(|proposed| {
                 let telemetry = proposed_batch_telemetry(proposed);
                 miden_span_record!(
@@ -298,42 +298,45 @@ impl BatchJob {
     )]
     async fn get_batch_inputs(
         &self,
-        batch: SelectedBatch,
-    ) -> Result<(SelectedBatch, BatchInputs), BuildBatchError> {
-        let batch_reference_block_num = batch.parameters().reference_block;
-        let block_references = batch
-            .transactions()
-            .iter()
-            .map(Deref::deref)
-            .map(AuthenticatedTransaction::reference_block);
-        let unauthenticated_notes = batch
-            .transactions()
-            .iter()
-            .map(Deref::deref)
-            .flat_map(AuthenticatedTransaction::unauthenticated_note_ids);
-
-        self.state
-            .view()
-            .get_batch_inputs(
-                batch_reference_block_num,
-                block_references.map(|(block_num, _)| block_num).collect(),
-                unauthenticated_notes.collect(),
-            )
-            .await
-            .map_err(StoreError::GetBatchInputsFailed)
-            .map_err(BuildBatchError::FetchBatchInputsFailed)
-            .map(|inputs| (batch, inputs))
-    }
-
-    #[miden_instrument(
-        target = COMPONENT,
-        name = "batch_builder.propose_batch",
-        err,
-    )]
-    async fn propose_batch(
         selected: SelectedBatch,
-        inputs: BatchInputs,
     ) -> Result<ProposedBatch, BuildBatchError> {
+        let mut block_numbers: BTreeSet<_> = selected
+            .transactions()
+            .iter()
+            .map(Deref::deref)
+            .map(AuthenticatedTransaction::reference_block)
+            .map(|(block_num, _)| block_num)
+            .collect();
+        let reference_block = selected.parameters().reference_block;
+        let note_ids = selected
+            .transactions()
+            .iter()
+            .map(Deref::deref)
+            .flat_map(AuthenticatedTransaction::unauthenticated_note_ids)
+            .map(NoteId::from_raw)
+            .collect();
+
+        let view = self.state.view();
+        let note_inclusion_proofs = view
+            .get_note_inclusion_proofs(reference_block, note_ids)
+            .await
+            .map_err(StoreError::GetNoteInclusionProofsFailed)
+            .map_err(BuildBatchError::FetchBatchInputsFailed)?;
+        block_numbers
+            .extend(note_inclusion_proofs.values().map(|proof| proof.location().block_num()));
+        let partial_blockchain = view
+            .get_block_inclusion_proofs(reference_block, block_numbers)
+            .await
+            .map_err(StoreError::GetBlockInclusionProofsFailed)
+            .map_err(BuildBatchError::FetchBatchInputsFailed)?;
+        let reference_block_header = view
+            .get_block_header(Some(reference_block), false)
+            .await
+            .map_err(StoreError::GetBlockHeaderFailed)
+            .map_err(BuildBatchError::FetchBatchInputsFailed)?
+            .0
+            .expect("reference block header should exist");
+
         let transactions = selected
             .into_transactions()
             .into_iter()
@@ -342,9 +345,9 @@ impl BatchJob {
 
         ProposedBatch::new(
             transactions,
-            inputs.batch_reference_block_header,
-            inputs.partial_block_chain,
-            inputs.note_proofs,
+            reference_block_header,
+            partial_blockchain,
+            note_inclusion_proofs,
             MIN_PROOF_SECURITY_LEVEL,
         )
         .map_err(BuildBatchError::ProposeBatchError)

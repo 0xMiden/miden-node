@@ -1,11 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use metrics::SeedingMetrics;
-use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_store::{BlockWriter, DataDirectory, GenesisState, State, WriterTask};
 use miden_node_utils::clap::StorageOptions;
 use miden_node_utils::shutdown::CancellationToken;
@@ -469,12 +468,13 @@ async fn generate_blocks(
             .extend(pending_consumed_accounts.into_iter().map(|account| (account.id(), account)));
 
         // create the consume notes txs to be used in the next block
-        let batch_inputs = get_batch_inputs(state, &prev_block_header, &notes, &mut metrics).await;
+        let note_inclusion_proofs =
+            get_note_inclusion_proofs(state, &prev_block_header, &notes, &mut metrics).await;
         (pending_consumed_accounts, consume_notes_txs) = create_consume_note_txs(
             &prev_block_header,
             accounts,
             notes,
-            &batch_inputs.note_proofs,
+            &note_inclusion_proofs,
             None,
         );
         pending_public_accounts = batch.public;
@@ -545,7 +545,8 @@ async fn generate_blocks(
         )
         .await;
 
-        let batch_inputs = get_batch_inputs(state, &prev_block_header, &notes, &mut metrics).await;
+        let note_inclusion_proofs =
+            get_note_inclusion_proofs(state, &prev_block_header, &notes, &mut metrics).await;
         let accounts = selected_account_ids
             .iter()
             .map(|account_id| {
@@ -558,7 +559,7 @@ async fn generate_blocks(
             &prev_block_header,
             accounts,
             notes,
-            &batch_inputs.note_proofs,
+            &note_inclusion_proofs,
             Some(BenchmarkStorageUpdate {
                 block_index: update_block_index,
                 storage_map_entries,
@@ -1067,27 +1068,21 @@ fn create_emit_note_tx(
     .unwrap()
 }
 
-/// Gets the batch inputs from the store and tracks the query time on the metrics.
-async fn get_batch_inputs(
+/// Gets note inclusion proofs from the store and tracks the query time on the metrics.
+async fn get_note_inclusion_proofs(
     state: &State,
     block_ref: &BlockHeader,
     notes: &[Note],
     metrics: &mut SeedingMetrics,
-) -> BatchInputs {
+) -> BTreeMap<NoteId, NoteInclusionProof> {
     let start = Instant::now();
-    // Mark every note as unauthenticated, so that the store returns the inclusion proofs for all of
-    // them
-    let batch_inputs = state
+    let note_inclusion_proofs = state
         .view()
-        .get_batch_inputs(
-            block_ref.block_num(),
-            [block_ref.block_num()].into_iter().collect(),
-            notes.iter().map(|note| note.id().as_word()).collect(),
-        )
+        .get_note_inclusion_proofs(block_ref.block_num(), notes.iter().map(Note::id).collect())
         .await
         .unwrap();
-    metrics.add_get_batch_inputs(start.elapsed());
-    batch_inputs
+    metrics.add_get_note_inclusion_proofs(start.elapsed());
+    note_inclusion_proofs
 }
 
 /// Gets the block inputs from the store and tracks the query time on the metrics.
@@ -1097,24 +1092,40 @@ async fn get_block_inputs(
     metrics: &mut SeedingMetrics,
 ) -> BlockInputs {
     let start = Instant::now();
-    let inputs = state
-        .view()
-        .get_block_inputs(
-            batches.iter().flat_map(ProvenBatch::updated_accounts).collect(),
-            batches.iter().flat_map(ProvenBatch::created_nullifiers).collect(),
-            batches
-                .iter()
-                .flat_map(|batch| {
-                    batch
-                        .input_notes()
-                        .into_iter()
-                        .filter_map(|note| note.header().map(|header| header.id().as_word()))
-                })
-                .collect(),
-            batches.iter().map(ProvenBatch::reference_block_num).collect(),
-        )
+    let account_ids = batches.iter().flat_map(ProvenBatch::updated_accounts).collect::<Vec<_>>();
+    let nullifiers = batches.iter().flat_map(ProvenBatch::created_nullifiers).collect::<Vec<_>>();
+    let mut block_numbers: BTreeSet<_> =
+        batches.iter().map(ProvenBatch::reference_block_num).collect();
+    let note_ids = batches
+        .iter()
+        .flat_map(|batch| {
+            batch
+                .input_notes()
+                .into_iter()
+                .filter_map(|note| note.header().map(miden_protocol::note::NoteHeader::id))
+        })
+        .collect();
+    let view = state.view();
+    let reference_block = *view.tip();
+    let note_inclusion_proofs =
+        view.get_note_inclusion_proofs(reference_block, note_ids).await.unwrap();
+    block_numbers.extend(note_inclusion_proofs.values().map(|proof| proof.location().block_num()));
+    let partial_blockchain =
+        view.get_block_inclusion_proofs(reference_block, block_numbers).await.unwrap();
+    let reference_block_header = view
+        .get_block_header(Some(reference_block), false)
         .await
-        .unwrap();
+        .unwrap()
+        .0
+        .expect("reference block header should exist");
+    let state_witnesses = view.get_state_witnesses(&account_ids, &nullifiers);
+    let inputs = BlockInputs::new(
+        reference_block_header,
+        partial_blockchain,
+        state_witnesses.account_witnesses,
+        state_witnesses.nullifier_witnesses,
+        note_inclusion_proofs,
+    );
     let get_block_inputs_time = start.elapsed();
     metrics.add_get_block_inputs(get_block_inputs_time);
     inputs

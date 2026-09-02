@@ -335,10 +335,10 @@ pub enum GetBatchInputsError {
     #[error("set of blocks referenced by transactions is empty")]
     TransactionBlockReferencesEmpty,
     #[error(
-        "highest block number {highest_block_num} referenced by a transaction is newer than the latest block {latest_block_num}"
+        "batch reference block {reference_block_num} is newer than the latest block {latest_block_num}"
     )]
-    UnknownTransactionBlockReference {
-        highest_block_num: BlockNumber,
+    UnknownBatchReferenceBlock {
+        reference_block_num: BlockNumber,
         latest_block_num: BlockNumber,
     },
 }

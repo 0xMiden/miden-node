@@ -3,8 +3,10 @@ use std::sync::Arc;
 
 use assert_matches::assert_matches;
 use miden_protocol::batch::BatchId;
+use miden_protocol::block::BlockNumber;
 use pretty_assertions::assert_eq;
 
+use crate::domain::batch::BatchParameters;
 use crate::domain::transaction::AuthenticatedTransaction;
 use crate::errors::{MempoolSubmissionError, StateConflict};
 use crate::mempool::Mempool;
@@ -28,7 +30,8 @@ fn user_batch_is_isolated_from_other_transactions() {
     let user_batch_txs = MockProvenTxBuilder::sequential();
     let user_batch_id =
         BatchId::from_transactions(user_batch_txs.iter().map(|tx| tx.raw_proven_transaction()));
-    uut.add_user_batch(&user_batch_txs).unwrap();
+    let user_parameters = BatchParameters { reference_block: 42.into() };
+    uut.add_user_batch(&user_batch_txs, user_parameters).unwrap();
 
     let batch_a = uut.select_any_batch().unwrap();
     let batch_b = uut.select_any_batch().unwrap();
@@ -41,10 +44,15 @@ fn user_batch_is_isolated_from_other_transactions() {
 
     assert_eq!(user.id(), user_batch_id);
     assert_eq!(user.transactions(), user_batch_txs.as_slice());
+    assert_eq!(user.parameters(), user_parameters);
 
     assert_eq!(conventional.transactions().len(), 2);
     assert!(conventional.transactions().contains(&conventional_a));
     assert!(conventional.transactions().contains(&conventional_b));
+    assert_eq!(
+        conventional.parameters(),
+        BatchParameters { reference_block: BlockNumber::GENESIS }
+    );
 }
 
 #[test]
@@ -53,7 +61,7 @@ fn user_batch_respects_batch_budget() {
     uut.config.batch_budget.transactions = 1;
 
     let user_batch_txs = MockProvenTxBuilder::sequential();
-    let result = uut.add_user_batch(&user_batch_txs[..2]);
+    let result = uut.add_user_batch(&user_batch_txs[..2], BatchParameters::for_tests());
 
     assert_matches!(result, Err(MempoolSubmissionError::CapacityExceeded));
 }
@@ -68,7 +76,10 @@ fn user_batch_capacity_counts_batched_uncommitted_transactions() {
     uut.add_transaction(conventional).unwrap();
     uut.select_any_batch().unwrap();
 
-    assert_matches!(uut.add_user_batch(&user_batch), Err(MempoolSubmissionError::CapacityExceeded));
+    assert_matches!(
+        uut.add_user_batch(&user_batch, BatchParameters::for_tests()),
+        Err(MempoolSubmissionError::CapacityExceeded)
+    );
 }
 
 #[test]
@@ -77,7 +88,7 @@ fn user_batch_counts_as_full_batch() {
     uut.config.batch_budget.transactions = 3;
 
     let user_batch_txs = MockProvenTxBuilder::sequential();
-    uut.add_user_batch(&user_batch_txs[..1]).unwrap();
+    uut.add_user_batch(&user_batch_txs[..1], BatchParameters::for_tests()).unwrap();
 
     let batch = uut.select_full_batch().unwrap();
     assert_eq!(batch.transactions(), &user_batch_txs[..1]);
@@ -90,7 +101,10 @@ fn user_batch_with_internal_state_conflicts_are_rejected() {
     let conflicting_a = tx_with_nullifiers(10, 0..1);
     let conflicting_b = tx_with_nullifiers(11, 0..1);
 
-    let result = uut.add_user_batch(&[conflicting_a.clone(), conflicting_b.clone()]);
+    let result = uut.add_user_batch(
+        &[conflicting_a.clone(), conflicting_b.clone()],
+        BatchParameters::for_tests(),
+    );
 
     assert_matches!(
         result,
@@ -111,7 +125,8 @@ fn user_batch_conflicts_with_existing_state_are_rejected() {
     let conflicting = tx_with_nullifiers(21, 5..6);
     let companion = tx_with_nullifiers(22, 6..7);
 
-    let result = uut.add_user_batch(&[conflicting.clone(), companion.clone()]);
+    let result =
+        uut.add_user_batch(&[conflicting.clone(), companion.clone()], BatchParameters::for_tests());
 
     assert_matches!(
         result,

@@ -1080,6 +1080,7 @@ async fn get_batch_inputs(
     let batch_inputs = state
         .view()
         .get_batch_inputs(
+            block_ref.block_num(),
             [block_ref.block_num()].into_iter().collect(),
             notes.iter().map(|note| note.id().as_word()).collect(),
         )

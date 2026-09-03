@@ -321,6 +321,41 @@ jobs:
   # Jobs that don't require caching to be efficient
   # ===============================================================================================
 
+  audit:
+    name: lint - dependency audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
+        with:
+          tool: cargo-audit@0.22.2
+      - name: Check dependencies
+        env:
+          CARGO_TERM_COLOR: never
+        run: |
+          set +e
+          cargo audit --deny yanked --deny unsound 2>&1 \
+            | tee "${RUNNER_TEMP}/cargo-audit.txt"
+          audit_status=${PIPESTATUS[0]}
+          set -e
+
+          if grep -qi "Warning: unmaintained" "${RUNNER_TEMP}/cargo-audit.txt"; then
+            echo "::warning title=Unmaintained dependencies::cargo audit found unmaintained dependencies. See the job summary for details."
+          fi
+
+          {
+            echo "## Dependency audit"
+            echo
+            echo '```text'
+            cat "${RUNNER_TEMP}/cargo-audit.txt"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          exit "${audit_status}"
+
   typos:
     name: lint - spelling
     runs-on: ubuntu-24.04

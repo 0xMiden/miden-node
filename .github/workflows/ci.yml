@@ -336,25 +336,45 @@ jobs:
       - name: Install cargo-audit
         run: cargo binstall --no-confirm cargo-audit@0.22.2
       - name: Check dependencies
-        env:
-          CARGO_TERM_COLOR: never
         run: |
           set +e
-          cargo audit --deny yanked --deny unsound 2>&1 \
-            | tee "${RUNNER_TEMP}/cargo-audit.txt"
+          cargo audit --color always --deny yanked --deny unsound 2>&1 \
+            | tee "${RUNNER_TEMP}/cargo-audit.ansi"
           audit_status=${PIPESTATUS[0]}
           set -e
 
+          sed $'s/\033\\[[0-9;]*m//g' "${RUNNER_TEMP}/cargo-audit.ansi" \
+            > "${RUNNER_TEMP}/cargo-audit.txt"
+
+          has_unmaintained=false
           if grep -Eqi "Warning:[[:space:]]+unmaintained" "${RUNNER_TEMP}/cargo-audit.txt"; then
+            has_unmaintained=true
             echo "::warning title=Unmaintained dependencies::cargo audit found unmaintained dependencies. See the job summary for details."
           fi
 
           {
             echo "## Dependency audit"
             echo
-            echo '```text'
+
+            if (( audit_status != 0 )); then
+              echo "> [!CAUTION]"
+              echo "> The dependency audit failed. Review the report below."
+            elif [[ "${has_unmaintained}" == true ]]; then
+              echo "> [!WARNING]"
+              echo "> The audit passed, but it found unmaintained dependencies."
+            else
+              echo "> [!TIP]"
+              echo "> The dependency audit passed."
+            fi
+
+            echo
+            echo "<details>"
+            echo "<summary>Full cargo-audit report</summary>"
+            echo
+            echo '```console'
             cat "${RUNNER_TEMP}/cargo-audit.txt"
             echo '```'
+            echo "</details>"
           } >> "${GITHUB_STEP_SUMMARY}"
 
           exit "${audit_status}"

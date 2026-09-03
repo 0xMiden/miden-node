@@ -4469,6 +4469,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-note-transport"
+version = "0.16.0-rc.5"
+
+[[package]]
 name = "miden-note-transport-proto"
 version = "0.5.0-rc.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

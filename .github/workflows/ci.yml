@@ -342,7 +342,7 @@ jobs:
           audit_status=${PIPESTATUS[0]}
           set -e
 
-          if grep -qi "Warning: unmaintained" "${RUNNER_TEMP}/cargo-audit.txt"; then
+          if grep -Eqi "Warning:[[:space:]]+unmaintained" "${RUNNER_TEMP}/cargo-audit.txt"; then
             echo "::warning title=Unmaintained dependencies::cargo audit found unmaintained dependencies. See the job summary for details."
           fi
 

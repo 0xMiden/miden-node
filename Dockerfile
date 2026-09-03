@@ -119,7 +119,6 @@ RUN --mount=type=cache,sharing=locked,id=cargo-registry-${TARGETARCH},target=/us
         /app/target/release/miden-remote-prover \
         /app/target/release/miden-benchmark \
         /app/bin/ && \
-    kache stats && \
     kache report --format github --output /app/kache-report.md && \
     rm -rf /app/target && \
     kache gc

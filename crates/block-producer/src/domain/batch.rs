@@ -11,6 +11,19 @@ use crate::domain::transaction::AuthenticatedTransaction;
 // SELECTED BATCH
 // ================================================================================================
 
+/// Parameters that define how the node builds a batch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct BatchParameters {
+    pub reference_block: BlockNumber,
+}
+
+#[cfg(test)]
+impl BatchParameters {
+    pub(crate) fn for_tests() -> Self {
+        Self { reference_block: BlockNumber::GENESIS }
+    }
+}
+
 /// A sequence of transactions selected by the [`Mempool`] to be processed by the
 /// [`BatchBuilder`] into a [`ProposedBatch`], and then finally into a [`ProvenBatch`].
 ///
@@ -22,13 +35,18 @@ use crate::domain::transaction::AuthenticatedTransaction;
 pub(crate) struct SelectedBatch {
     txs: Vec<Arc<AuthenticatedTransaction>>,
     id: BatchId,
+    parameters: BatchParameters,
     account_updates: HashMap<AccountId, (Word, Word, Option<Word>)>,
     unauthenticated_notes: HashSet<Word>,
 }
 
 impl SelectedBatch {
-    pub(crate) fn builder() -> SelectedBatchBuilder {
-        SelectedBatchBuilder::default()
+    pub(crate) fn builder(parameters: BatchParameters) -> SelectedBatchBuilder {
+        SelectedBatchBuilder {
+            parameters,
+            txs: Vec::new(),
+            account_updates: HashMap::new(),
+        }
     }
 
     pub(crate) fn id(&self) -> BatchId {
@@ -41,6 +59,10 @@ impl SelectedBatch {
 
     pub(crate) fn transactions(&self) -> &[Arc<AuthenticatedTransaction>] {
         &self.txs
+    }
+
+    pub(crate) fn parameters(&self) -> BatchParameters {
+        self.parameters
     }
 
     /// The aggregated list of account transitions this batch causes given as tuples of `(AccountId,
@@ -71,8 +93,9 @@ impl SelectedBatch {
 }
 
 /// A builder to construct a [`SelectedBatch`].
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct SelectedBatchBuilder {
+    parameters: BatchParameters,
     pub(crate) txs: Vec<Arc<AuthenticatedTransaction>>,
     pub(crate) account_updates: HashMap<AccountId, (Word, Word, Option<Word>)>,
 }
@@ -118,7 +141,7 @@ not match the current commitment {}",
 
     /// Finalizes the batch selection.
     pub(crate) fn build(self) -> SelectedBatch {
-        let Self { txs, account_updates } = self;
+        let Self { parameters, txs, account_updates } = self;
         let id = BatchId::from_ids(txs.iter().map(|tx| (tx.id(), tx.account_id())));
 
         let mut unauthenticated_notes: HashSet<_> =
@@ -131,6 +154,7 @@ not match the current commitment {}",
         SelectedBatch {
             txs,
             id,
+            parameters,
             account_updates,
             unauthenticated_notes,
         }

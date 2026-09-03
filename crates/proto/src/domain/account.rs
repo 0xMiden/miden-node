@@ -400,9 +400,10 @@ impl TryFrom<proto::rpc::AccountVaultDetails> for AccountVaultDetails {
         if too_many_assets {
             Ok(Self::LimitExceeded)
         } else {
-            let parsed_assets = Result::<Vec<_>, ConversionError>::from_iter(
-                assets.into_iter().map(Asset::try_from),
-            )?;
+            let parsed_assets = assets
+                .into_iter()
+                .map(Asset::try_from)
+                .collect::<Result<Vec<_>, ConversionError>>()?;
             Ok(Self::Assets(parsed_assets))
         }
     }
@@ -417,7 +418,7 @@ impl From<AccountVaultDetails> for proto::rpc::AccountVaultDetails {
             },
             AccountVaultDetails::Assets(assets) => Self {
                 too_many_assets: false,
-                assets: Vec::from_iter(assets.into_iter().map(proto::primitives::Asset::from)),
+                assets: assets.into_iter().map(proto::primitives::Asset::from).collect::<Vec<_>>(),
             },
         }
     }
@@ -481,7 +482,7 @@ impl AccountStorageMapDetails {
                 entries: StorageMapEntries::LimitExceeded,
             }
         } else {
-            let entries = Vec::from_iter(storage_map.entries().map(|(k, v)| (*k, *v)));
+            let entries = storage_map.entries().map(|(k, v)| (*k, *v)).collect::<Vec<_>>();
             Self {
                 slot_name,
                 entries: StorageMapEntries::AllEntries(entries),
@@ -656,12 +657,12 @@ impl From<AccountStorageMapDetails>
             StorageMapEntries::LimitExceeded => ProtoResult::TooManyEntries(true),
             StorageMapEntries::AllEntries(entries) => {
                 let all = AllMapEntries {
-                    entries: Vec::from_iter(entries.into_iter().map(|(key, value)| {
+                    entries: entries.into_iter().map(|(key, value)| {
                         proto::rpc::account_storage_details::account_storage_map_details::all_map_entries::StorageMapEntry {
                             key: Some(key.into()),
                             value: Some(value.into()),
                         }
-                    })),
+                    }).collect::<Vec<_>>(),
                 };
                 ProtoResult::AllEntries(all)
             },
@@ -694,9 +695,10 @@ impl AccountStorageDetails {
     ) -> Self {
         Self {
             header,
-            map_details: Vec::from_iter(
-                slot_names.into_iter().map(AccountStorageMapDetails::limit_exceeded),
-            ),
+            map_details: slot_names
+                .into_iter()
+                .map(AccountStorageMapDetails::limit_exceeded)
+                .collect::<Vec<_>>(),
         }
     }
 }

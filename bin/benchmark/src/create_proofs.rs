@@ -37,6 +37,7 @@ use miden_protocol::transaction::{
     TransactionArgs,
 };
 use miden_protocol::utils::serde::Serializable;
+use miden_protocol::vm::FutureMaybeSend;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::{Approver, AuthSingleSig};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
@@ -107,8 +108,10 @@ impl ProofCollector {
         }
     }
 
-    /// Submit one executed tx for proving. The remote path spawns a concurrent task and returns
-    /// immediately; the local path proves inline now, blocking until the proof is done.
+    /// Submits one executed transaction for proving.
+    ///
+    /// The remote prover uses a concurrent task and returns immediately. The local prover blocks
+    /// until it completes the proof.
     async fn submit(&mut self, prover: &Arc<BenchmarkProver>, executed_tx: ExecutedTransaction) {
         match self {
             Self::Concurrent(tasks) => {
@@ -493,75 +496,88 @@ impl BenchmarkDataStore {
 }
 
 impl DataStore for BenchmarkDataStore {
-    async fn get_transaction_inputs(
+    fn get_transaction_inputs(
         &self,
         account_id: AccountId,
         _block_refs: BTreeSet<BlockNumber>,
-    ) -> Result<(PartialAccount, BlockHeader, PartialBlockchain), DataStoreError> {
-        let account = self.get_account(account_id)?;
-        let partial_account = PartialAccount::from(account);
-        Ok((partial_account, self.block_header.clone(), self.partial_block_chain.clone()))
+    ) -> impl FutureMaybeSend<Result<(PartialAccount, BlockHeader, PartialBlockchain), DataStoreError>>
+    {
+        async move {
+            let account = self.get_account(account_id)?;
+            let partial_account = PartialAccount::from(account);
+            Ok((partial_account, self.block_header.clone(), self.partial_block_chain.clone()))
+        }
     }
 
-    async fn get_storage_map_witness(
+    fn get_storage_map_witness(
         &self,
         account_id: AccountId,
         map_root: Word,
         map_key: StorageMapKey,
-    ) -> Result<miden_protocol::account::StorageMapWitness, DataStoreError> {
-        let account = self.get_account(account_id)?;
-        for slot in account.storage().slots() {
-            if let miden_protocol::account::StorageSlotContent::Map(map) = slot.content() {
-                if map.root() == map_root {
-                    return Ok(map.open(&map_key));
+    ) -> impl FutureMaybeSend<Result<miden_protocol::account::StorageMapWitness, DataStoreError>>
+    {
+        async move {
+            let account = self.get_account(account_id)?;
+            for slot in account.storage().slots() {
+                if let miden_protocol::account::StorageSlotContent::Map(map) = slot.content() {
+                    if map.root() == map_root {
+                        return Ok(map.open(&map_key));
+                    }
                 }
             }
-        }
-        Err(DataStoreError::Other {
-            error_msg: format!("no storage map with the requested root in account {account_id}")
+            Err(DataStoreError::Other {
+                error_msg: format!(
+                    "no storage map with the requested root in account {account_id}"
+                )
                 .into(),
-            source: None,
-        })
+                source: None,
+            })
+        }
     }
 
-    async fn get_foreign_account_inputs(
+    fn get_foreign_account_inputs(
         &self,
         _foreign_account_id: AccountId,
         _ref_block: BlockNumber,
-    ) -> Result<AccountInputs, DataStoreError> {
-        unimplemented!("foreign account inputs are not needed for the benchmark")
+    ) -> impl FutureMaybeSend<Result<AccountInputs, DataStoreError>> {
+        async move { unimplemented!("foreign account inputs are not needed for the benchmark") }
     }
 
-    async fn get_vault_asset_witnesses(
+    fn get_vault_asset_witnesses(
         &self,
         account_id: AccountId,
         vault_root: Word,
         vault_keys: BTreeSet<AssetId>,
-    ) -> Result<Vec<AssetWitness>, DataStoreError> {
-        let account = self.get_account(account_id)?;
+    ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
+        async move {
+            let account = self.get_account(account_id)?;
 
-        if account.vault().root() != vault_root {
-            return Err(DataStoreError::Other {
-                error_msg: "vault root mismatch".into(),
-                source: None,
-            });
+            if account.vault().root() != vault_root {
+                return Err(DataStoreError::Other {
+                    error_msg: "vault root mismatch".into(),
+                    source: None,
+                });
+            }
+
+            vault_keys
+                .into_iter()
+                .map(|vault_key| {
+                    AssetWitness::new(account.vault().open(vault_key).into(), [vault_key]).map_err(
+                        |err| DataStoreError::Other {
+                            error_msg: "failed to open vault asset tree".into(),
+                            source: Some(Box::new(err)),
+                        },
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()
         }
-
-        Result::<Vec<_>, _>::from_iter(vault_keys.into_iter().map(|vault_key| {
-            AssetWitness::new(account.vault().open(vault_key).into(), [vault_key]).map_err(|err| {
-                DataStoreError::Other {
-                    error_msg: "failed to open vault asset tree".into(),
-                    source: Some(Box::new(err)),
-                }
-            })
-        }))
     }
 
-    async fn get_note_script(
+    fn get_note_script(
         &self,
         _script_root: NoteScriptRoot,
-    ) -> Result<Option<NoteScript>, DataStoreError> {
-        Ok(None)
+    ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
+        async move { Ok(None) }
     }
 }
 

@@ -1,5 +1,4 @@
-/// NOTE: This module contains logic that will eventually be moved to the Validator component when
-/// it is added to this repository.
+//! Provides transaction inputs to validator transaction execution.
 use std::collections::BTreeSet;
 
 use miden_protocol::Word;

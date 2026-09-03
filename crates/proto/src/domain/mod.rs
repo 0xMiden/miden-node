@@ -1,5 +1,4 @@
 pub mod account;
-pub mod batch;
 pub mod block;
 pub mod digest;
 pub mod encryption;

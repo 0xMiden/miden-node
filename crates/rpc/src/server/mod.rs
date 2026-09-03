@@ -443,6 +443,8 @@ fn log_node_synchronizing(mode: &str, endpoint: impl Display, readiness_threshol
 pub struct SequencerInternal {
     /// The listener the service binds to.
     pub listener: TcpListener,
+    /// The read-only store state used to validate transaction reference blocks.
+    pub state: Arc<State>,
     /// The in-process block producer API submissions are forwarded to.
     pub block_producer: BlockProducerApi,
     /// gRPC server options for internal services (timeouts).
@@ -465,7 +467,10 @@ impl SequencerInternal {
             internal.listen = endpoint.to_string()
         );
 
-        let service = SequencerInternalService { block_producer: self.block_producer };
+        let service = SequencerInternalService {
+            state: self.state,
+            block_producer: self.block_producer,
+        };
 
         // Note: deliberately no accept-header / auth layers; this is a private, trusted interface
         // and is expected to be network-isolated.

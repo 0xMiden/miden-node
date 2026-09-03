@@ -4,8 +4,9 @@ use miden_node_proto::errors::GrpcError;
 use miden_node_store::{
     ApplyBlockWithProvingInputsError,
     DatabaseError,
-    GetBatchInputsError,
-    GetBlockInputsError,
+    GetBlockHeaderError,
+    GetBlockInclusionProofsError,
+    GetNoteInclusionProofsError,
 };
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
@@ -13,6 +14,7 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::utils::DeserializationError;
 use miden_protocol::errors::{ProposedBatchError, ProposedBlockError, ProvenBatchError};
 use miden_protocol::note::Nullifier;
+use miden_protocol::transaction::TransactionId;
 use thiserror::Error;
 
 use crate::batch_builder::RemoteProverError;
@@ -72,6 +74,9 @@ pub enum MempoolSubmissionError {
 
     #[error("the mempool is at capacity")]
     CapacityExceeded,
+
+    #[error("transaction {transaction_id} does not contain a non-zero TX_FEE output note")]
+    MissingFee { transaction_id: TransactionId },
 
     #[error("mempool lock is poisoned")]
     #[grpc(internal)]
@@ -134,8 +139,8 @@ pub enum BuildBatchError {
 pub enum BuildBlockError {
     #[error("failed to apply block to store")]
     StoreApplyBlockFailed(#[source] StoreError),
-    #[error("failed to get block inputs from store")]
-    GetBlockInputsFailed(#[source] StoreError),
+    #[error("failed to fetch block inputs from store")]
+    FetchBlockInputsFailed(#[source] StoreError),
     #[error(
         "Desync detected between block-producer's chain tip {local_chain_tip} and the store's {store_chain_tip}"
     )]
@@ -187,10 +192,12 @@ pub enum StoreError {
     DuplicateAccountIdPrefix(AccountId),
     #[error("failed to get transaction inputs from store")]
     GetTransactionInputsFailed(#[source] DatabaseError),
-    #[error("failed to get batch inputs from store")]
-    GetBatchInputsFailed(#[source] GetBatchInputsError),
-    #[error("failed to get block inputs from store")]
-    GetBlockInputsFailed(#[source] GetBlockInputsError),
+    #[error("failed to get block inclusion proofs from store")]
+    GetBlockInclusionProofsFailed(#[source] GetBlockInclusionProofsError),
+    #[error("failed to get block header from store")]
+    GetBlockHeaderFailed(#[source] GetBlockHeaderError),
+    #[error("failed to get note inclusion proofs from store")]
+    GetNoteInclusionProofsFailed(#[source] GetNoteInclusionProofsError),
     #[error("failed to apply block to store")]
     ApplyBlockFailed(#[source] ApplyBlockWithProvingInputsError),
 }

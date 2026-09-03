@@ -341,9 +341,8 @@ mod tests {
         let proto_header: proto::note::NoteHeader = original.into();
         let decoded = NoteHeader::try_from(proto_header).expect("proto NoteHeader should decode");
 
-        // Both the derived id and the details_commitment must match — guards against the historical
-        // bug where the encoder wrote `id` into the same wire field the decoder interpreted as
-        // `details_commitment`.
+        // The protocol round trip must preserve both fields. The wire schema stores them in
+        // separate fields.
         assert_eq!(decoded.id(), original.id());
         assert_eq!(decoded.details_commitment(), original.details_commitment());
         assert_eq!(decoded.metadata(), original.metadata());

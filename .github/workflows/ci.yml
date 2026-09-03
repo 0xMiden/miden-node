@@ -338,7 +338,13 @@ jobs:
       - name: Check dependencies
         run: |
           set +e
-          cargo audit --color always --deny yanked --deny unsound 2>&1 \
+          # Ignore RUSTSEC-2024-0388 because only inactive ruint compatibility features use derivative.
+          # Ignore RUSTSEC-2024-0436 because upstream crates do not provide releases without paste.
+          cargo audit --color always \
+            --deny yanked \
+            --deny unsound \
+            --ignore RUSTSEC-2024-0388 \
+            --ignore RUSTSEC-2024-0436 2>&1 \
             | tee "${RUNNER_TEMP}/cargo-audit.ansi"
           audit_status=${PIPESTATUS[0]}
           set -e

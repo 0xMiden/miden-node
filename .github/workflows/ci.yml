@@ -329,9 +329,12 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
         with:
-          tool: cargo-audit@0.22.2
+          tool: cargo-binstall
+      - name: Install cargo-audit
+        run: cargo binstall --no-confirm cargo-audit@0.22.2
       - name: Check dependencies
         env:
           CARGO_TERM_COLOR: never
@@ -451,9 +454,11 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - name: Install cargo-shear
+      - name: Install cargo-binstall
         uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
         with:
-          tool: cargo-shear@1.12.4
+          tool: cargo-binstall
+      - name: Install cargo-shear
+        run: cargo binstall --no-confirm cargo-shear@1.12.4
       - name: Check for unused dependencies
         run: make shear

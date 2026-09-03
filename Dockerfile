@@ -120,8 +120,12 @@ RUN --mount=type=cache,sharing=locked,id=cargo-registry-${TARGETARCH},target=/us
         /app/target/release/miden-benchmark \
         /app/bin/ && \
     kache stats && \
+    kache report --format github --output /app/kache-report.md && \
     rm -rf /app/target && \
     kache gc
+
+FROM scratch AS build-report
+COPY --from=builder /app/kache-report.md /kache-report.md
 
 # Baseline runtime image with runtime dependencies installed.
 FROM debian:${DEBIAN_RELEASE}-slim AS runtime-base

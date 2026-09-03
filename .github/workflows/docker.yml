@@ -195,10 +195,18 @@ jobs:
           context: .
           push: false
           file: ./Dockerfile
-          target: builder
+          target: build-report
           platforms: ${{ matrix.platform }}
           profile-name: ${{ vars.WARPBUILD_DOCKER_BUILDER_PROFILE }}
           pull: true
+          outputs: type=local,dest=${{ runner.temp }}/kache-report
+
+      - name: Add Kache cache summary
+        run: |
+          {
+            echo "## ${{ matrix.platform }}"
+            cat "${RUNNER_TEMP}/kache-report/kache-report.md"
+          } >> "${GITHUB_STEP_SUMMARY}"
 
   dry-run-docker:
     name: Validate ${{ matrix.component }} image

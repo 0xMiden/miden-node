@@ -4470,7 +4470,7 @@ dependencies = [
 
 [[package]]
 name = "miden-note-transport"
-version = "0.16.0-rc.3"
+version = "0.16.0-rc.5"
 
 [[package]]
 name = "miden-note-transport-proto"

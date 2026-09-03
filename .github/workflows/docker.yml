@@ -234,7 +234,7 @@ jobs:
         run: |
           {
             echo "<details>"
-            echo "<summary>Kache</summary>"
+            echo "<summary>Docker Kache stats</summary>"
             echo
             for architecture in amd64 arm64; do
               echo "<details>"

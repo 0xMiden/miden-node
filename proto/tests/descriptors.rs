@@ -142,7 +142,7 @@ fn service_descriptors_use_canonical_protocol_messages() {
     );
     assert_eq!(
         message_field_type(&sequencer, "sequencer", "AuthenticatedTransaction", "transaction"),
-        ".transaction.ProvenTransactionData"
+        ".transaction.ProvenTransaction"
     );
     assert_eq!(
         message_field_type(
@@ -180,7 +180,7 @@ fn service_descriptors_use_canonical_protocol_messages() {
     );
     assert_eq!(
         message_field_type(&remote_prover, "remote_prover", "Proof", "transaction"),
-        ".transaction.ProvenTransactionData"
+        ".transaction.ProvenTransaction"
     );
     assert_eq!(
         message_field_type(&remote_prover, "remote_prover", "Proof", "batch"),

@@ -57,7 +57,6 @@ use miden_protocol::transaction::{
     TxAccountUpdate,
 };
 use miden_protocol::utils::serde::Serializable;
-use miden_protocol::vm::ExecutionProof;
 use miden_protocol::{ACCOUNT_UPDATE_MAX_SIZE, Felt, ONE, Word};
 use miden_standards::account::auth::{Approver, AuthSingleSig};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
@@ -898,7 +897,7 @@ fn create_batch(txs: &[ProvenTransaction], block_ref: &BlockHeader) -> ProvenBat
         output_notes,
         BlockNumber::MAX,
         OrderedTransactionHeaders::new_unchecked(txs.iter().map(TransactionHeader::from).collect()),
-        ExecutionProof::new_dummy(),
+        miden_protocol::testing::dummy_execution_proof(),
     )
     .unwrap()
 }
@@ -981,7 +980,7 @@ fn create_consume_note_tx(
         block_ref.block_num(),
         block_ref.commitment(),
         u32::MAX.into(),
-        ExecutionProof::new_dummy(),
+        miden_protocol::testing::dummy_execution_proof(),
     )
     .unwrap();
 
@@ -1068,7 +1067,7 @@ fn create_emit_note_tx(
         block_ref.block_num(),
         block_ref.commitment(),
         u32::MAX.into(),
-        ExecutionProof::new_dummy(),
+        miden_protocol::testing::dummy_execution_proof(),
     )
     .unwrap()
 }

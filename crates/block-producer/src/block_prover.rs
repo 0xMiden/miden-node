@@ -55,7 +55,7 @@ pub enum BlockProver {
 
 impl BlockProver {
     pub fn local() -> Self {
-        Self::Local(LocalBlockProver::new(0))
+        Self::Local(LocalBlockProver::default())
     }
 
     pub fn remote(url: Url) -> anyhow::Result<Self> {

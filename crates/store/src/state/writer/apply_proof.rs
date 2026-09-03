@@ -1,7 +1,6 @@
 use anyhow::{Context, ensure};
 use miden_node_tracing::miden_instrument;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::vm::ExecutionProof;
 
 use crate::COMPONENT;

@@ -103,7 +103,7 @@ mod response_tests {
     fn invalid_transaction_response_preserves_conversion_error_source() {
         let response = Proof {
             proof: Some(ProofVariant::Transaction(
-                miden_node_proto::generated::transaction::ProvenTransactionData::default(),
+                miden_node_proto::generated::transaction::ProvenTransaction::default(),
             )),
         };
 

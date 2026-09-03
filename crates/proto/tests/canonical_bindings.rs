@@ -9,7 +9,7 @@ fn generated_service_fields_accept_canonical_object_messages_directly() {
         ..Default::default()
     };
 
-    let transaction = proto::transaction::ProvenTransactionData::default();
+    let transaction = proto::transaction::ProvenTransaction::default();
     let request = generated::sequencer::AuthenticatedTransaction {
         transaction: Some(transaction),
         ..Default::default()

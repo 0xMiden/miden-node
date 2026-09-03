@@ -346,7 +346,7 @@ impl RpcClient {
         proven_tx: &ProvenTransaction,
         tx_inputs: &TransactionInputs,
     ) -> Result<(), Status> {
-        let transaction: proto::transaction::ProvenTransactionData = proven_tx.into();
+        let transaction: proto::transaction::ProvenTransaction = proven_tx.into();
         let transaction_inputs = tx_inputs.to_bytes();
         let tx_id = proven_tx.id();
         let stale_key = AtomicBool::new(false);

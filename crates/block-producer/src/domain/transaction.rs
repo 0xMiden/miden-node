@@ -274,7 +274,7 @@ mod tests {
     use crate::test_utils::{MockProvenTxBuilder, mock_account_id};
 
     fn fee_parameters(verification_base_fee: u32) -> FeeParameters {
-        FeeParameters::new(FungibleAsset::mock_issuer(), verification_base_fee)
+        FeeParameters::new(verification_base_fee)
     }
 
     fn transaction_with_fee_amount(amount: u64) -> ProvenTransaction {

@@ -55,7 +55,13 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::batch::ProposedBatch;
-use miden_protocol::block::{BlockSignatures, FeeParameters, ProvenBlock, SignedBlock};
+use miden_protocol::block::{
+    BlockSignatures,
+    FeeParameters,
+    ProvenBlock,
+    SignedBlock,
+    ValidatorConfig,
+};
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
@@ -161,11 +167,9 @@ impl TestStore {
             miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey::read_from_bytes(&[7; 32])
                 .expect("test signing key should decode")
                 .public_key();
-        let validator_keys =
-            miden_protocol::block::ValidatorKeys::new(vec![validator_key]).unwrap();
-        let (mut genesis_state, _) = config.into_state(validator_keys).unwrap();
-        genesis_state.fee_parameters =
-            FeeParameters::new(genesis_state.fee_parameters.fee_faucet_id(), verification_base_fee);
+        let validator_config = ValidatorConfig::new(vec![validator_key], 1).unwrap();
+        let (mut genesis_state, _) = config.into_state(validator_config).unwrap();
+        genesis_state.fee_parameters = FeeParameters::new(verification_base_fee);
         let genesis_block =
             genesis_state.clone().into_block().expect("genesis block should be created");
         let genesis_commitment = genesis_block.inner().header().commitment();
@@ -211,7 +215,7 @@ fn build_test_account(seed: [u8; 32]) -> (Account, AccountPatch) {
 
 /// Creates a minimal proven transaction for testing.
 ///
-/// This uses `ExecutionProof::new_dummy()` and is intended for tests that
+/// This uses a dummy execution proof and is intended for tests that
 /// need to test validation logic.
 fn build_test_proven_tx(
     account: &Account,
@@ -254,7 +258,7 @@ fn build_test_proven_tx_with_fee(
         0.into(),
         genesis,
         u32::MAX.into(),
-        ExecutionProof::new_dummy(),
+        miden_protocol::testing::dummy_execution_proof(),
     )
     .unwrap()
 }
@@ -294,7 +298,23 @@ fn build_test_proven_tx_with_id(
         0.into(),
         genesis,
         u32::MAX.into(),
-        ExecutionProof::new_dummy(),
+        miden_protocol::testing::dummy_execution_proof(),
+    )
+    .unwrap()
+}
+
+fn replace_transaction_proof(
+    transaction: &ProvenTransaction,
+    proof: ExecutionProof,
+) -> ProvenTransaction {
+    ProvenTransaction::new(
+        transaction.account_update().clone(),
+        transaction.input_notes().iter().cloned(),
+        transaction.output_notes().iter().cloned(),
+        transaction.ref_block_num(),
+        transaction.ref_block_commitment(),
+        transaction.expiration_block_num(),
+        proof,
     )
     .unwrap()
 }
@@ -351,7 +371,7 @@ async fn build_valid_batch_fixture() -> ValidBatchFixture {
         let proposed_batch = proposed_batch.clone();
         move || {
             let executed_batch = BatchExecutor::new().execute(proposed_batch)?;
-            LocalBatchProver::new().prove(executed_batch)
+            LocalBatchProver::default().prove(executed_batch)
         }
     })
     .await
@@ -518,7 +538,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
     let incorrect_commitment = incorrect_patch.to_commitment();
 
     // Corrupt the structured account update with the incorrect patch commitment.
-    let mut transaction: proto::transaction::ProvenTransactionData = (&tx).into();
+    let mut transaction: proto::transaction::ProvenTransaction = (&tx).into();
     transaction.account_update.as_mut().unwrap().account_patch_commitment =
         Some(incorrect_commitment.into());
 
@@ -546,8 +566,8 @@ async fn rpc_server_rejects_proven_transactions_without_fees() {
     let genesis = store.genesis_commitment();
     let (account, account_patch) = build_test_account([0; 32]);
     let tx = build_test_proven_tx_with_fee(&account, &account_patch, genesis, false);
-    let request = proto::transaction::ProvenTransaction {
-        transaction: tx.to_bytes(),
+    let request = proto::submission::ProvenTransactionSubmission {
+        transaction: Some((&tx).into()),
         sealed_transaction_inputs: None,
     };
 
@@ -609,8 +629,8 @@ async fn rpc_server_does_not_require_fees_when_the_base_fee_is_zero() {
     let genesis = store.genesis_commitment();
     let (account, account_patch) = build_test_account([0; 32]);
     let tx = build_test_proven_tx_with_fee(&account, &account_patch, genesis, false);
-    let request = proto::transaction::ProvenTransaction {
-        transaction: tx.to_bytes(),
+    let request = proto::submission::ProvenTransactionSubmission {
+        transaction: Some((&tx).into()),
         sealed_transaction_inputs: None,
     };
 
@@ -629,6 +649,34 @@ async fn rpc_server_does_not_require_fees_when_the_base_fee_is_zero() {
         status.message().contains("Invalid proof for transaction"),
         "expected proof validation after the fee gate, got: {status}"
     );
+}
+
+#[tokio::test]
+async fn rpc_server_rejects_deferred_transaction_proofs() {
+    let store = TestStore::start().await;
+    let genesis = store.genesis_commitment();
+    let (account, account_patch) = build_test_account([0; 32]);
+    let transaction = build_test_proven_tx(&account, &account_patch, genesis);
+    let transaction = replace_transaction_proof(
+        &transaction,
+        miden_protocol::testing::dummy_deferred_execution_proof(),
+    );
+    let request = proto::submission::ProvenTransactionSubmission {
+        transaction: Some((&transaction).into()),
+        sealed_transaction_inputs: None,
+    };
+
+    let service = RpcService::new(
+        Arc::clone(&store.state),
+        RpcBackend::full_node(source_rpc_client(), None),
+        None,
+        NonZeroUsize::new(1_000_000).unwrap(),
+        None,
+    );
+
+    let status = service.submit_proven_tx(Request::new(request)).await.unwrap_err();
+    assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    assert!(status.message().contains("outstanding precompile obligation"));
 }
 
 #[tokio::test]
@@ -1076,8 +1124,14 @@ fn test_encryption_key() -> proto::submission::TransactionEncryptionKey {
         key_id: vec![0xDE, 0xAD, 0xBE, 0xEF],
         public_key: vec![7; 32],
         attestations: vec![proto::submission::ValidatorKeyAttestation {
-            validator_public_key: Some(proto::primitives::PublicKey { encoded: vec![8; 33] }),
-            signature: Some(proto::primitives::Signature { encoded: vec![9; 65] }),
+            validator_public_key: Some(proto::primitives::PublicKey {
+                variant: proto::primitives::PublicKeyVariant::EcdsaK256Keccak as i32,
+                encoded: vec![8; 33],
+            }),
+            signature: Some(proto::primitives::Signature {
+                variant: proto::primitives::SignatureVariant::EcdsaK256Keccak as i32,
+                encoded: vec![9; 65],
+            }),
         }],
         next_key: Some(proto::submission::NextTransactionEncryptionKey {
             scheme: proto::submission::IesScheme::X25519Xchacha20Poly1305 as i32,
@@ -1313,7 +1367,10 @@ async fn authenticated_batch_defers_validation_to_async_handler() {
         BlockProducerApiConfig::default(),
         shutdown,
     );
-    let service = SequencerInternalService { block_producer };
+    let service = SequencerInternalService {
+        state: Arc::clone(&store.state),
+        block_producer,
+    };
     let error = <SequencerInternalService as sequencer_api::SubmitAuthenticatedTxBatch>::handle(
         &service,
         input,

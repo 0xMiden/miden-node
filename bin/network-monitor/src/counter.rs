@@ -995,8 +995,6 @@ async fn fetch_wallet_account(
     };
 
     let header = details.header.context("missing account header")?;
-    let miden_node_proto::generated::account::account_header::Version::V1(header) =
-        header.version.context("missing account header version")?;
     let nonce: u64 = header.nonce;
 
     let code: AccountCode = details

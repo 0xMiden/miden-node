@@ -19,7 +19,6 @@ use miden_protocol::transaction::{
     OrderedTransactionHeaders,
     PartialBlockchain,
 };
-use miden_protocol::vm::ExecutionProof;
 
 fn private_account_id(seed: u8) -> AccountId {
     AccountId::dummy(
@@ -65,7 +64,7 @@ fn empty_batch(reference_block_num: u32) -> ProvenBatch {
         Vec::new(),
         BlockNumber::from(reference_block_num + 1),
         OrderedTransactionHeaders::new_unchecked(Vec::new()),
-        ExecutionProof::new_dummy(),
+        miden_protocol::testing::dummy_execution_proof(),
     )
     .unwrap()
 }

@@ -26,8 +26,8 @@ impl Prover {
     pub fn new(proof_type: ProofKind) -> Self {
         match proof_type {
             ProofKind::Transaction => Self::Transaction(LocalTransactionProver::default()),
-            ProofKind::Batch => Self::Batch(LocalBatchProver::new()),
-            ProofKind::Block => Self::Block(LocalBlockProver::new(MIN_PROOF_SECURITY_LEVEL)),
+            ProofKind::Batch => Self::Batch(LocalBatchProver::default()),
+            ProofKind::Block => Self::Block(LocalBlockProver::default()),
         }
     }
 

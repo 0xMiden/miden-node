@@ -37,7 +37,7 @@ impl BatchProver {
     }
 
     pub(super) fn local() -> Self {
-        Self::Local(LocalBatchProver::new())
+        Self::Local(LocalBatchProver::default())
     }
 
     pub(super) fn remote(url: Url) -> anyhow::Result<Self> {
@@ -116,7 +116,7 @@ mod response_tests {
     fn mismatched_batch_response_variant_is_a_protocol_error() {
         let response = Proof {
             proof: Some(ProofVariant::Transaction(
-                miden_node_proto::generated::transaction::ProvenTransactionData::default(),
+                miden_node_proto::generated::transaction::ProvenTransaction::default(),
             )),
         };
         let error = extract_batch_proof(response).unwrap_err();

@@ -105,7 +105,8 @@ mod tests {
     use miden_protocol::account::StorageMapKey;
     use miden_protocol::asset::{AssetId, FungibleAsset};
     use miden_standards::account::auth::NetworkAccount;
-    use miden_standards::note::{FeeSponsorshipNote, NetworkAccountConfigNote};
+    use miden_standards::note::FeeSponsorshipNote;
+    use miden_standards::note::config::NetworkAccountConfigNote;
 
     use super::*;
     use crate::deploy::wallet::create_wallet_account;

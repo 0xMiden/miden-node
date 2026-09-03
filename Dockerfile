@@ -105,6 +105,7 @@ RUN --mount=type=cache,sharing=locked,id=cargo-registry-${TARGETARCH},target=/us
     cargo build --release --locked --jobs "${JOBS}" \
         --bin miden-node \
         --bin miden-validator \
+        --bin miden-note-transport \
         --bin miden-ntx-builder \
         --bin miden-network-monitor \
         --bin miden-remote-prover \
@@ -112,13 +113,19 @@ RUN --mount=type=cache,sharing=locked,id=cargo-registry-${TARGETARCH},target=/us
     mkdir -p /app/bin && \
     cp /app/target/release/miden-node \
         /app/target/release/miden-validator \
+        /app/target/release/miden-note-transport \
         /app/target/release/miden-ntx-builder \
         /app/target/release/miden-network-monitor \
         /app/target/release/miden-remote-prover \
         /app/target/release/miden-benchmark \
         /app/bin/ && \
+    kache stats && \
+    kache report --format github --output /app/kache-report.md && \
     rm -rf /app/target && \
     kache gc
+
+FROM scratch AS build-report
+COPY --from=builder /app/kache-report.md /kache-report.md
 
 # Baseline runtime image with runtime dependencies installed.
 FROM debian:${DEBIAN_RELEASE}-slim AS runtime-base

@@ -1,0 +1,15 @@
+[package]
+authors.workspace      = true
+description            = "Miden Note Transport Service"
+edition.workspace      = true
+homepage.workspace     = true
+keywords               = ["messaging", "miden"]
+license.workspace      = true
+name                   = "miden-note-transport"
+readme.workspace       = true
+repository.workspace   = true
+rust-version.workspace = true
+version.workspace      = true
+
+[lints]
+workspace = true

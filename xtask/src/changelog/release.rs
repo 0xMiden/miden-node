@@ -6,10 +6,17 @@ use semver::Version;
 use serde::Deserialize;
 
 use super::pr::{self, ChangelogDocument};
-use super::{InvalidChangelogEntry, InvalidChangelogSource, ProtocolUpdate, ReleaseNoteEntry};
+use super::{
+    InvalidChangelogEntry,
+    InvalidChangelogSource,
+    ProtocolUpdate,
+    ReleaseNoteEntry,
+    RustMsrvUpdate,
+};
 
 pub(super) struct ChangelogEntries {
     pub(super) protocol_update: Option<ProtocolUpdate>,
+    pub(super) rust_msrv_update: Option<RustMsrvUpdate>,
     pub(super) entries: Vec<ReleaseNoteEntry>,
     pub(super) invalid_entries: Vec<InvalidChangelogEntry>,
 }
@@ -17,6 +24,7 @@ pub(super) struct ChangelogEntries {
 pub(super) struct CurrentChangelog {
     pub(super) title: String,
     pub(super) protocol_update: Option<ProtocolUpdate>,
+    pub(super) rust_msrv_update: Option<RustMsrvUpdate>,
     pub(super) entries: Vec<ReleaseNoteEntry>,
     pub(super) invalid_entries: Vec<InvalidChangelogEntry>,
 }
@@ -48,6 +56,7 @@ pub(super) fn release_changelog_entries(release_tag: &str) -> Result<ChangelogEn
     let mut changelog = changelog_entries_for_pull_requests(&repo, &pull_requests.pull_requests);
     changelog.invalid_entries.extend(pull_requests.invalid_entries);
     changelog.protocol_update = protocol_update(&previous_release_ref, &release_ref)?;
+    changelog.rust_msrv_update = rust_msrv_update(&previous_release_ref, &release_ref)?;
 
     Ok(changelog)
 }
@@ -66,6 +75,7 @@ pub(super) fn current_changelog_entries() -> Result<CurrentChangelog> {
         return Ok(CurrentChangelog {
             title: format!("Changes since {previous_stable_tag}"),
             protocol_update: None,
+            rust_msrv_update: None,
             entries: Vec::new(),
             invalid_entries: Vec::new(),
         });
@@ -79,6 +89,7 @@ pub(super) fn current_changelog_entries() -> Result<CurrentChangelog> {
     Ok(CurrentChangelog {
         title: format!("Changes since {previous_stable_tag}"),
         protocol_update: protocol_update(&format!("refs/tags/{previous_stable_tag}"), "HEAD")?,
+        rust_msrv_update: rust_msrv_update(&format!("refs/tags/{previous_stable_tag}"), "HEAD")?,
         entries: changelog.entries,
         invalid_entries: changelog.invalid_entries,
     })
@@ -235,6 +246,53 @@ fn protocol_version_from_lockfile(source: &str) -> Result<Version> {
     );
 
     Version::parse(&versions[0]).context("parsing the miden-protocol version")
+}
+
+fn rust_msrv_update(previous_ref: &str, current_ref: &str) -> Result<Option<RustMsrvUpdate>> {
+    let previous_manifest = manifest_at(previous_ref)?;
+    let current_manifest = manifest_at(current_ref)?;
+
+    rust_msrv_update_from_manifests(&previous_manifest, &current_manifest)
+}
+
+fn manifest_at(git_ref: &str) -> Result<String> {
+    let object = format!("{git_ref}:Cargo.toml");
+    git_output(&["show", &object]).with_context(|| format!("reading Cargo.toml at {git_ref}"))
+}
+
+fn rust_msrv_update_from_manifests(
+    previous_manifest: &str,
+    current_manifest: &str,
+) -> Result<Option<RustMsrvUpdate>> {
+    let previous =
+        rust_msrv_from_manifest(previous_manifest).context("reading the previous Rust MSRV")?;
+    let current =
+        rust_msrv_from_manifest(current_manifest).context("reading the current Rust MSRV")?;
+
+    Ok((previous != current).then_some(RustMsrvUpdate { previous, current }))
+}
+
+fn rust_msrv_from_manifest(source: &str) -> Result<String> {
+    #[derive(Deserialize)]
+    struct Manifest {
+        workspace: Workspace,
+    }
+
+    #[derive(Deserialize)]
+    struct Workspace {
+        package: WorkspacePackage,
+    }
+
+    #[derive(Deserialize)]
+    struct WorkspacePackage {
+        #[serde(rename = "rust-version")]
+        rust_version: String,
+    }
+
+    let manifest = toml::from_str::<Manifest>(source).context("parsing Cargo.toml as TOML")?;
+    ensure!(!manifest.workspace.package.rust_version.trim().is_empty(), "Rust MSRV is empty");
+
+    Ok(manifest.workspace.package.rust_version)
 }
 
 fn github_repo() -> Result<String> {
@@ -400,6 +458,7 @@ where
 
     ChangelogEntries {
         protocol_update: None,
+        rust_msrv_update: None,
         entries,
         invalid_entries,
     }
@@ -475,6 +534,7 @@ mod tests {
         previous_release_tag_from,
         protocol_update_from_lockfiles,
         pull_requests_for_commits_with,
+        rust_msrv_update_from_manifests,
     };
     use crate::changelog::render;
 
@@ -494,7 +554,8 @@ mod tests {
             })
             .unwrap();
 
-        let notes = render::release_notes("Release v1.2.3", None, &[], &changelog.invalid_entries);
+        let notes =
+            render::release_notes("Release v1.2.3", None, None, &[], &changelog.invalid_entries);
 
         assert_eq!(
             notes,
@@ -565,6 +626,7 @@ No release-note-worthy changes.
         let notes = render::release_notes(
             "Release v1.2.3",
             None,
+            None,
             &changelog.entries,
             &changelog.invalid_entries,
         );
@@ -602,6 +664,7 @@ No release-note-worthy changes.
 
         let notes = render::release_notes(
             "Release v1.2.3",
+            None,
             None,
             &changelog.entries,
             &changelog.invalid_entries,
@@ -662,6 +725,25 @@ No release-note-worthy changes.
         assert!(protocol_update_from_lockfiles(&previous, &current).unwrap().is_none());
     }
 
+    #[test]
+    fn rust_msrv_update_uses_the_versions_at_the_range_endpoints() {
+        let previous = manifest("1.96.1");
+        let current = manifest("1.98.0");
+
+        let update = rust_msrv_update_from_manifests(&previous, &current).unwrap().unwrap();
+
+        assert_eq!(update.previous, "1.96.1");
+        assert_eq!(update.current, "1.98.0");
+    }
+
+    #[test]
+    fn unchanged_rust_msrv_does_not_create_an_update() {
+        let previous = manifest("1.98.0");
+        let current = manifest("1.98.0");
+
+        assert!(rust_msrv_update_from_manifests(&previous, &current).unwrap().is_none());
+    }
+
     fn lockfile(protocol_version: &str) -> String {
         format!(
             r#"version = 4
@@ -669,6 +751,14 @@ No release-note-worthy changes.
 [[package]]
 name = "miden-protocol"
 version = "{protocol_version}"
+"#
+        )
+    }
+
+    fn manifest(rust_msrv: &str) -> String {
+        format!(
+            r#"[workspace.package]
+rust-version = "{rust_msrv}"
 "#
         )
     }

@@ -6,25 +6,35 @@ use super::{
     InvalidChangelogSource,
     ProtocolUpdate,
     ReleaseNoteEntry,
+    RustMsrvUpdate,
     Scope,
 };
 
 pub(super) fn release_notes(
     title: &str,
     protocol_update: Option<&ProtocolUpdate>,
+    rust_msrv_update: Option<&RustMsrvUpdate>,
     entries: &[ReleaseNoteEntry],
     invalid_entries: &[InvalidChangelogEntry],
 ) -> String {
     let mut notes = format!("{title}\n");
 
+    if protocol_update.is_some() || rust_msrv_update.is_some() {
+        notes.push('\n');
+    }
+
     if let Some(update) = protocol_update {
         append_protocol_update(&mut notes, update);
+    }
+
+    if let Some(update) = rust_msrv_update {
+        append_rust_msrv_update(&mut notes, update);
     }
 
     append_invalid_entries(&mut notes, invalid_entries);
 
     if entries.is_empty() {
-        if protocol_update.is_none() {
+        if protocol_update.is_none() && rust_msrv_update.is_none() {
             notes.push_str("\nNo release-note-worthy changes.\n");
         }
         return notes;
@@ -62,7 +72,15 @@ fn append_protocol_update(notes: &mut String, update: &ProtocolUpdate) {
     let previous = &update.previous;
     let current = &update.current;
 
-    writeln!(notes, "\nProtocol support updated from `{previous}` to `{current}`.")
+    writeln!(notes, "Protocol support updated from `{previous}` to `{current}`.")
+        .expect("writing to String cannot fail");
+}
+
+fn append_rust_msrv_update(notes: &mut String, update: &RustMsrvUpdate) {
+    let previous = &update.previous;
+    let current = &update.current;
+
+    writeln!(notes, "Rust MSRV updated from `{previous}` to `{current}`.")
         .expect("writing to String cannot fail");
 }
 
@@ -246,15 +264,25 @@ mod tests {
             previous: semver::Version::parse("0.16.0-rc.4").unwrap(),
             current: semver::Version::parse("0.16.0-rc.9").unwrap(),
         };
+        let rust_msrv_update = RustMsrvUpdate {
+            previous: "1.96.1".to_owned(),
+            current: "1.98.0".to_owned(),
+        };
 
-        let notes =
-            release_notes("Release v0.16.0", Some(&protocol_update), &entries, &invalid_entries);
+        let notes = release_notes(
+            "Release v0.16.0",
+            Some(&protocol_update),
+            Some(&rust_msrv_update),
+            &entries,
+            &invalid_entries,
+        );
 
         assert_eq!(
             notes,
             r"Release v0.16.0
 
 Protocol support updated from `0.16.0-rc.4` to `0.16.0-rc.9`.
+Rust MSRV updated from `1.96.1` to `1.98.0`.
 
 ## Changelog Entries Requiring Attention
 
@@ -296,13 +324,31 @@ Protocol support updated from `0.16.0-rc.4` to `0.16.0-rc.9`.
             current: semver::Version::parse("0.16.0-rc.9").unwrap(),
         };
 
-        let notes = release_notes("Release v0.16.0", Some(&protocol_update), &[], &[]);
+        let notes = release_notes("Release v0.16.0", Some(&protocol_update), None, &[], &[]);
 
         assert_eq!(
             notes,
             r"Release v0.16.0
 
 Protocol support updated from `0.16.0-rc.4` to `0.16.0-rc.9`.
+"
+        );
+    }
+
+    #[test]
+    fn renders_a_rust_msrv_update_without_pr_entries() {
+        let rust_msrv_update = RustMsrvUpdate {
+            previous: "1.96.1".to_owned(),
+            current: "1.98.0".to_owned(),
+        };
+
+        let notes = release_notes("Release v0.16.0", None, Some(&rust_msrv_update), &[], &[]);
+
+        assert_eq!(
+            notes,
+            r"Release v0.16.0
+
+Rust MSRV updated from `1.96.1` to `1.98.0`.
 "
         );
     }

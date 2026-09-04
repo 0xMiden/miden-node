@@ -1,4 +1,6 @@
 use std::env;
+use std::ffi::OsStr;
+use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context, Result, bail, ensure};
@@ -7,6 +9,8 @@ use serde::Deserialize;
 
 use super::pr::{self, ChangelogDocument};
 use super::{
+    Database,
+    DatabaseMigrationUpdate,
     InvalidChangelogEntry,
     InvalidChangelogSource,
     ProtocolUpdate,
@@ -17,6 +21,7 @@ use super::{
 pub(super) struct ChangelogEntries {
     pub(super) protocol_update: Option<ProtocolUpdate>,
     pub(super) rust_msrv_update: Option<RustMsrvUpdate>,
+    pub(super) database_migration_updates: Vec<DatabaseMigrationUpdate>,
     pub(super) entries: Vec<ReleaseNoteEntry>,
     pub(super) invalid_entries: Vec<InvalidChangelogEntry>,
 }
@@ -25,6 +30,7 @@ pub(super) struct CurrentChangelog {
     pub(super) title: String,
     pub(super) protocol_update: Option<ProtocolUpdate>,
     pub(super) rust_msrv_update: Option<RustMsrvUpdate>,
+    pub(super) database_migration_updates: Vec<DatabaseMigrationUpdate>,
     pub(super) entries: Vec<ReleaseNoteEntry>,
     pub(super) invalid_entries: Vec<InvalidChangelogEntry>,
 }
@@ -57,6 +63,8 @@ pub(super) fn release_changelog_entries(release_tag: &str) -> Result<ChangelogEn
     changelog.invalid_entries.extend(pull_requests.invalid_entries);
     changelog.protocol_update = protocol_update(&previous_release_ref, &release_ref)?;
     changelog.rust_msrv_update = rust_msrv_update(&previous_release_ref, &release_ref)?;
+    changelog.database_migration_updates =
+        database_migration_updates(&previous_release_ref, &release_ref)?;
 
     Ok(changelog)
 }
@@ -76,6 +84,7 @@ pub(super) fn current_changelog_entries() -> Result<CurrentChangelog> {
             title: format!("Changes since {previous_stable_tag}"),
             protocol_update: None,
             rust_msrv_update: None,
+            database_migration_updates: Vec::new(),
             entries: Vec::new(),
             invalid_entries: Vec::new(),
         });
@@ -90,6 +99,10 @@ pub(super) fn current_changelog_entries() -> Result<CurrentChangelog> {
         title: format!("Changes since {previous_stable_tag}"),
         protocol_update: protocol_update(&format!("refs/tags/{previous_stable_tag}"), "HEAD")?,
         rust_msrv_update: rust_msrv_update(&format!("refs/tags/{previous_stable_tag}"), "HEAD")?,
+        database_migration_updates: database_migration_updates(
+            &format!("refs/tags/{previous_stable_tag}"),
+            "HEAD",
+        )?,
         entries: changelog.entries,
         invalid_entries: changelog.invalid_entries,
     })
@@ -295,6 +308,89 @@ fn rust_msrv_from_manifest(source: &str) -> Result<String> {
     Ok(manifest.workspace.package.rust_version)
 }
 
+fn database_migration_updates(
+    previous_ref: &str,
+    current_ref: &str,
+) -> Result<Vec<DatabaseMigrationUpdate>> {
+    let previous_tree = migration_tree_at(previous_ref)?;
+    let current_tree = migration_tree_at(current_ref)?;
+
+    Ok(database_migration_updates_from_trees(&previous_tree, &current_tree))
+}
+
+fn migration_tree_at(git_ref: &str) -> Result<String> {
+    git_output(&[
+        "ls-tree",
+        "-r",
+        "--name-only",
+        git_ref,
+        "--",
+        Database::Store.path(),
+        Database::Validator.path(),
+        Database::NtxBuilder.path(),
+    ])
+    .with_context(|| format!("listing database migrations at {git_ref}"))
+}
+
+fn database_migration_updates_from_trees(
+    previous_tree: &str,
+    current_tree: &str,
+) -> Vec<DatabaseMigrationUpdate> {
+    Database::ALL
+        .into_iter()
+        .filter_map(|database| {
+            let previous = migration_version(previous_tree, database);
+            let current = migration_version(current_tree, database);
+
+            (current > previous).then_some(DatabaseMigrationUpdate { database, previous, current })
+        })
+        .collect()
+}
+
+fn migration_version(tree: &str, database: Database) -> u16 {
+    tree.lines()
+        .filter_map(|path| migration_prefix(path, database))
+        .max()
+        .unwrap_or(0)
+}
+
+fn migration_prefix(path: &str, database: Database) -> Option<u16> {
+    let relative = path.strip_prefix(database.path())?.strip_prefix('/')?;
+    let file_name = if let Some(retired) = relative.strip_prefix("retired/") {
+        if retired.contains('/') || Path::new(retired).extension() != Some(OsStr::new("sql")) {
+            return None;
+        }
+        retired
+    } else {
+        let extension = Path::new(relative).extension();
+        if relative.contains('/')
+            || !(extension == Some(OsStr::new("sql")) || extension == Some(OsStr::new("rs")))
+        {
+            return None;
+        }
+        relative
+    };
+    let (prefix, _name) = file_name.split_once('_')?;
+
+    if prefix.len() != 3 || !prefix.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+
+    prefix.parse().ok()
+}
+
+impl Database {
+    const ALL: [Self; 3] = [Self::Store, Self::Validator, Self::NtxBuilder];
+
+    const fn path(self) -> &'static str {
+        match self {
+            Self::Store => "crates/store/src/db/migrations",
+            Self::Validator => "bin/validator/src/db/migrations",
+            Self::NtxBuilder => "bin/ntx-builder/src/db/migrations",
+        }
+    }
+}
+
 fn github_repo() -> Result<String> {
     if let Ok(repo) = env::var("GITHUB_REPOSITORY") {
         let repo = repo.trim();
@@ -459,6 +555,7 @@ where
     ChangelogEntries {
         protocol_update: None,
         rust_msrv_update: None,
+        database_migration_updates: Vec::new(),
         entries,
         invalid_entries,
     }
@@ -529,8 +626,10 @@ mod tests {
     use super::{
         AssociatedPullRequest,
         CommitPullRequests,
+        Database,
         ReleaseTag,
         changelog_entries_for_pull_requests_with,
+        database_migration_updates_from_trees,
         previous_release_tag_from,
         protocol_update_from_lockfiles,
         pull_requests_for_commits_with,
@@ -554,8 +653,14 @@ mod tests {
             })
             .unwrap();
 
-        let notes =
-            render::release_notes("Release v1.2.3", None, None, &[], &changelog.invalid_entries);
+        let notes = render::release_notes(
+            "Release v1.2.3",
+            None,
+            None,
+            &[],
+            &[],
+            &changelog.invalid_entries,
+        );
 
         assert_eq!(
             notes,
@@ -627,6 +732,7 @@ No release-note-worthy changes.
             "Release v1.2.3",
             None,
             None,
+            &[],
             &changelog.entries,
             &changelog.invalid_entries,
         );
@@ -666,6 +772,7 @@ No release-note-worthy changes.
             "Release v1.2.3",
             None,
             None,
+            &[],
             &changelog.entries,
             &changelog.invalid_entries,
         );
@@ -744,6 +851,41 @@ No release-note-worthy changes.
         assert!(rust_msrv_update_from_manifests(&previous, &current).unwrap().is_none());
     }
 
+    #[test]
+    fn database_migration_updates_use_the_highest_prefix() {
+        let previous = migration_tree(&[
+            "crates/store/src/db/migrations/003_block_headers.sql",
+            "bin/validator/src/db/migrations/001_initial.sql",
+            "bin/ntx-builder/src/db/migrations/001_initial.sql",
+        ]);
+        let current = migration_tree(&[
+            "crates/store/src/db/migrations/003_block_headers.sql",
+            "crates/store/src/db/migrations/004_validity_intervals.sql",
+            "crates/store/src/db/migrations/005_incremental_code_pruning.rs",
+            "crates/store/src/db/migrations/005_incremental_code_pruning/support.rs",
+            "crates/store/src/db/migrations/tests/mod.rs",
+            "bin/validator/src/db/migrations/retired/001_initial.sql",
+            "bin/ntx-builder/src/db/migrations/001_initial.sql",
+            "bin/ntx-builder/src/db/migrations/003_sponsorship_notes.sql",
+        ]);
+
+        let updates = database_migration_updates_from_trees(&previous, &current);
+
+        assert_eq!(updates.len(), 2);
+        assert_eq!(updates[0].database, Database::Store);
+        assert_eq!((updates[0].previous, updates[0].current), (3, 5));
+        assert_eq!(updates[1].database, Database::NtxBuilder);
+        assert_eq!((updates[1].previous, updates[1].current), (1, 3));
+    }
+
+    #[test]
+    fn unchanged_database_migration_prefix_does_not_create_an_update() {
+        let previous = migration_tree(&["crates/store/src/db/migrations/005_active.sql"]);
+        let current = migration_tree(&["crates/store/src/db/migrations/retired/005_active.sql"]);
+
+        assert!(database_migration_updates_from_trees(&previous, &current).is_empty());
+    }
+
     fn lockfile(protocol_version: &str) -> String {
         format!(
             r#"version = 4
@@ -761,6 +903,10 @@ version = "{protocol_version}"
 rust-version = "{rust_msrv}"
 "#
         )
+    }
+
+    fn migration_tree(paths: &[&str]) -> String {
+        paths.join("\n")
     }
 
     fn release_tags(tags: &[&str]) -> Vec<(String, semver::Version)> {

@@ -24,11 +24,11 @@ changelog = "none"
 reason    = "Internal change only."
 ```
 
-Do not add an entry for a protocol or Rust MSRV version update. Release notes derive these updates
-from repository files.
+Do not add an entry for a protocol, Rust MSRV, or database migration version update. Release notes
+derive these updates from repository files.
 
 Allowed scopes: rpc, docs, node, note-transport, network-monitor, ntx-builder, prover, validator, internal, general
-Allowed impacts: breaking, migration, added, changed, fixed, removed, deprecated
+Allowed impacts: breaking, added, changed, fixed, removed, deprecated
 -->
 
 ```toml

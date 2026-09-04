@@ -18,6 +18,7 @@ pub fn render_release_notes(release_tag: &str) -> Result<String> {
         &format!("Release {release_tag}"),
         changelog.protocol_update.as_ref(),
         changelog.rust_msrv_update.as_ref(),
+        &changelog.database_migration_updates,
         &changelog.entries,
         &changelog.invalid_entries,
     ))
@@ -29,6 +30,7 @@ pub fn render_current_changelog() -> Result<String> {
         &changelog.title,
         changelog.protocol_update.as_ref(),
         changelog.rust_msrv_update.as_ref(),
+        &changelog.database_migration_updates,
         &changelog.entries,
         &changelog.invalid_entries,
     ))
@@ -61,11 +63,24 @@ struct RustMsrvUpdate {
     current: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Database {
+    Store,
+    Validator,
+    NtxBuilder,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct DatabaseMigrationUpdate {
+    database: Database,
+    previous: u16,
+    current: u16,
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 enum Impact {
     Breaking,
-    Migration,
     Added,
     Changed,
     Fixed,

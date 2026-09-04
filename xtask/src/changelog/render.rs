@@ -1,6 +1,8 @@
 use std::fmt::Write as _;
 
 use super::{
+    Database,
+    DatabaseMigrationUpdate,
     Impact,
     InvalidChangelogEntry,
     InvalidChangelogSource,
@@ -14,12 +16,16 @@ pub(super) fn release_notes(
     title: &str,
     protocol_update: Option<&ProtocolUpdate>,
     rust_msrv_update: Option<&RustMsrvUpdate>,
+    database_migration_updates: &[DatabaseMigrationUpdate],
     entries: &[ReleaseNoteEntry],
     invalid_entries: &[InvalidChangelogEntry],
 ) -> String {
     let mut notes = format!("{title}\n");
 
-    if protocol_update.is_some() || rust_msrv_update.is_some() {
+    if protocol_update.is_some()
+        || rust_msrv_update.is_some()
+        || !database_migration_updates.is_empty()
+    {
         notes.push('\n');
     }
 
@@ -31,17 +37,21 @@ pub(super) fn release_notes(
         append_rust_msrv_update(&mut notes, update);
     }
 
+    append_database_migration_updates(&mut notes, database_migration_updates);
+
     append_invalid_entries(&mut notes, invalid_entries);
 
     if entries.is_empty() {
-        if protocol_update.is_none() && rust_msrv_update.is_none() {
+        if protocol_update.is_none()
+            && rust_msrv_update.is_none()
+            && database_migration_updates.is_empty()
+        {
             notes.push_str("\nNo release-note-worthy changes.\n");
         }
         return notes;
     }
 
     append_impact_section(&mut notes, "Breaking Changes", Impact::Breaking, entries);
-    append_impact_section(&mut notes, "Migrations", Impact::Migration, entries);
 
     notes.push_str("\n## Changes by Scope\n");
 
@@ -82,6 +92,20 @@ fn append_rust_msrv_update(notes: &mut String, update: &RustMsrvUpdate) {
 
     writeln!(notes, "Rust MSRV updated from `{previous}` to `{current}`.")
         .expect("writing to String cannot fail");
+}
+
+fn append_database_migration_updates(notes: &mut String, updates: &[DatabaseMigrationUpdate]) {
+    for update in updates {
+        let database = update.database;
+        let previous = update.previous;
+        let current = update.current;
+
+        writeln!(
+            notes,
+            "{database} database schema migrated from `{previous:03}` to `{current:03}`."
+        )
+        .expect("writing to String cannot fail");
+    }
 }
 
 fn append_invalid_entries(notes: &mut String, invalid_entries: &[InvalidChangelogEntry]) {
@@ -187,16 +211,27 @@ impl std::fmt::Display for Scope {
     }
 }
 
+impl std::fmt::Display for Database {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let label = match self {
+            Self::Store => "Store",
+            Self::Validator => "Validator",
+            Self::NtxBuilder => "NTX Builder",
+        };
+
+        formatter.write_str(label)
+    }
+}
+
 impl Impact {
     fn sort_key(self) -> usize {
         match self {
             Self::Breaking => 0,
-            Self::Migration => 1,
-            Self::Added => 2,
-            Self::Changed => 3,
-            Self::Fixed => 4,
-            Self::Deprecated => 5,
-            Self::Removed => 6,
+            Self::Added => 1,
+            Self::Changed => 2,
+            Self::Fixed => 3,
+            Self::Deprecated => 4,
+            Self::Removed => 5,
         }
     }
 }
@@ -205,7 +240,6 @@ impl std::fmt::Display for Impact {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let label = match self {
             Self::Breaking => "Breaking",
-            Self::Migration => "Migration",
             Self::Added => "Added",
             Self::Changed => "Changed",
             Self::Fixed => "Fixed",
@@ -239,13 +273,6 @@ mod tests {
                 order: 0,
             },
             ReleaseNoteEntry {
-                pr_number: 11,
-                scope: Scope::Validator,
-                impact: Impact::Migration,
-                description: "Added database migration.".to_owned(),
-                order: 1,
-            },
-            ReleaseNoteEntry {
                 pr_number: 12,
                 scope: Scope::Node,
                 impact: Impact::Added,
@@ -268,11 +295,24 @@ mod tests {
             previous: "1.96.1".to_owned(),
             current: "1.98.0".to_owned(),
         };
+        let database_migration_updates = vec![
+            DatabaseMigrationUpdate {
+                database: Database::Store,
+                previous: 3,
+                current: 5,
+            },
+            DatabaseMigrationUpdate {
+                database: Database::NtxBuilder,
+                previous: 1,
+                current: 3,
+            },
+        ];
 
         let notes = release_notes(
             "Release v0.16.0",
             Some(&protocol_update),
             Some(&rust_msrv_update),
+            &database_migration_updates,
             &entries,
             &invalid_entries,
         );
@@ -283,6 +323,8 @@ mod tests {
 
 Protocol support updated from `0.16.0-rc.4` to `0.16.0-rc.9`.
 Rust MSRV updated from `1.96.1` to `1.98.0`.
+Store database schema migrated from `003` to `005`.
+NTX Builder database schema migrated from `001` to `003`.
 
 ## Changelog Entries Requiring Attention
 
@@ -291,10 +333,6 @@ Rust MSRV updated from `1.96.1` to `1.98.0`.
 ## Breaking Changes
 
 - **RPC:** Changed request shape. (#10)
-
-## Migrations
-
-- **Validator:** Added database migration. (#11)
 
 ## Changes by Scope
 
@@ -309,10 +347,6 @@ Rust MSRV updated from `1.96.1` to `1.98.0`.
 ### Node
 
 - **Added:** Added startup command. (#12)
-
-### Validator
-
-- **Migration:** Added database migration. (#11)
 "
         );
     }
@@ -324,7 +358,7 @@ Rust MSRV updated from `1.96.1` to `1.98.0`.
             current: semver::Version::parse("0.16.0-rc.9").unwrap(),
         };
 
-        let notes = release_notes("Release v0.16.0", Some(&protocol_update), None, &[], &[]);
+        let notes = release_notes("Release v0.16.0", Some(&protocol_update), None, &[], &[], &[]);
 
         assert_eq!(
             notes,
@@ -342,13 +376,32 @@ Protocol support updated from `0.16.0-rc.4` to `0.16.0-rc.9`.
             current: "1.98.0".to_owned(),
         };
 
-        let notes = release_notes("Release v0.16.0", None, Some(&rust_msrv_update), &[], &[]);
+        let notes = release_notes("Release v0.16.0", None, Some(&rust_msrv_update), &[], &[], &[]);
 
         assert_eq!(
             notes,
             r"Release v0.16.0
 
 Rust MSRV updated from `1.96.1` to `1.98.0`.
+"
+        );
+    }
+
+    #[test]
+    fn renders_database_migration_updates_without_pr_entries() {
+        let updates = vec![DatabaseMigrationUpdate {
+            database: Database::Store,
+            previous: 3,
+            current: 5,
+        }];
+
+        let notes = release_notes("Release v0.16.0", None, None, &updates, &[], &[]);
+
+        assert_eq!(
+            notes,
+            r"Release v0.16.0
+
+Store database schema migrated from `003` to `005`.
 "
         );
     }

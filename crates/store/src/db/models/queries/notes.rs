@@ -24,12 +24,12 @@ use diesel::{
     SelectableHelper,
     SqliteConnection,
 };
+use miden_node_tracing::miden_instrument;
 use miden_node_utils::limiter::{
     QueryParamLimiter,
     QueryParamNoteCommitmentLimit,
     QueryParamNoteTagLimit,
 };
-use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::{BlockNoteIndex, BlockNumber};
@@ -308,8 +308,9 @@ pub(crate) fn select_note_inclusion_proofs(
     .order_by(schema::notes::committed_at.asc())
     .load::<(i64, Vec<u8>, i32, i32, Vec<u8>)>(conn)?;
 
-    Result::<BTreeMap<_, _>, _>::from_iter(raw_notes.iter().map(
-        |(block_num, note_id, batch_index, note_index, merkle_path)| {
+    raw_notes
+        .iter()
+        .map(|(block_num, note_id, batch_index, note_index, merkle_path)| {
             let note_id = NoteId::read_from_bytes(&note_id[..])?;
             let block_num = BlockNumber::from_raw_sql(*block_num)?;
             let node_index_in_block =
@@ -319,8 +320,8 @@ pub(crate) fn select_note_inclusion_proofs(
             let merkle_path = SparseMerklePath::read_from_bytes(&merkle_path[..])?;
             let proof = NoteInclusionProof::new(block_num, node_index_in_block, merkle_path)?;
             Ok((note_id, proof))
-        },
-    ))
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()
 }
 
 /// Select note sync records matching the given note commitments.
@@ -746,11 +747,12 @@ pub(crate) fn insert_notes(
     notes: &[(NoteRecord, Option<Nullifier>)],
 ) -> Result<usize, DatabaseError> {
     let count = diesel::insert_into(schema::notes::table)
-        .values(Vec::from_iter(
+        .values(
             notes
                 .iter()
-                .map(|(note, nullifier)| NoteInsertRow::from((note.clone(), *nullifier))),
-        ))
+                .map(|(note, nullifier)| NoteInsertRow::from((note.clone(), *nullifier)))
+                .collect::<Vec<_>>(),
+        )
         .execute(conn)?;
     Ok(count)
 }
@@ -774,13 +776,16 @@ pub(crate) fn insert_scripts<'a>(
     conn: &mut SqliteConnection,
     notes: impl IntoIterator<Item = &'a NoteRecord>,
 ) -> Result<usize, DatabaseError> {
-    let values = Vec::from_iter(notes.into_iter().filter_map(|note| {
-        let note_details = note.details.as_ref()?;
-        Some((
-            schema::note_scripts::script_root.eq(note_details.script().root().to_bytes()),
-            schema::note_scripts::script.eq(note_details.script().to_bytes()),
-        ))
-    }));
+    let values = notes
+        .into_iter()
+        .filter_map(|note| {
+            let note_details = note.details.as_ref()?;
+            Some((
+                schema::note_scripts::script_root.eq(note_details.script().root().to_bytes()),
+                schema::note_scripts::script.eq(note_details.script().to_bytes()),
+            ))
+        })
+        .collect::<Vec<_>>();
     let count = diesel::insert_or_ignore_into(schema::note_scripts::table)
         .values(values)
         .execute(conn)?;

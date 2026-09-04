@@ -8,12 +8,12 @@ use std::sync::Arc;
 use anyhow::Context;
 use diesel::{Connection, SqliteConnection};
 use miden_node_proto::domain::account::AccountInfo;
+use miden_node_tracing::{info, miden_instrument, warn};
 use miden_node_utils::limiter::{
     MAX_RESPONSE_PAYLOAD_BYTES,
     QueryParamLimiter,
     QueryParamNoteCommitmentLimit,
 };
-use miden_node_utils::tracing::{info, miden_instrument, warn};
 use miden_protocol::Word;
 use miden_protocol::account::{AccountHeader, AccountId, AccountStorageHeader, StorageMapKey};
 use miden_protocol::asset::{Asset, AssetId};
@@ -314,7 +314,7 @@ impl Db {
 
         self.transact("nullifieres by prefix", move |conn| {
             let nullifier_prefixes =
-                Vec::from_iter(nullifier_prefixes.into_iter().map(|prefix| prefix as u16));
+                nullifier_prefixes.into_iter().map(|prefix| prefix as u16).collect::<Vec<_>>();
             queries::select_nullifiers_by_prefix(
                 conn,
                 prefix_len as u8,
@@ -754,7 +754,7 @@ impl Db {
             return Ok(AccountStorageMapDetails::limit_exceeded(slot_name));
         }
 
-        let entries = Vec::from_iter(latest_values.into_iter());
+        let entries = latest_values.into_iter().collect::<Vec<_>>();
         Ok(AccountStorageMapDetails {
             slot_name,
             entries: StorageMapEntries::AllEntries(entries),

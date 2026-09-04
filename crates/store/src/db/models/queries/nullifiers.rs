@@ -12,12 +12,12 @@ use diesel::{
     SelectableHelper,
     SqliteConnection,
 };
+use miden_node_tracing::miden_instrument;
 use miden_node_utils::limiter::{
     MAX_RESPONSE_PAYLOAD_BYTES,
     QueryParamLimiter,
     QueryParamNullifierPrefixLimit,
 };
-use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::Nullifier;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
@@ -246,7 +246,7 @@ pub(crate) fn insert_nullifiers_for_block(
     block_num: BlockNumber,
 ) -> Result<usize, DatabaseError> {
     let serialized_nullifiers =
-        Vec::<Vec<u8>>::from_iter(nullifiers.iter().map(Nullifier::to_bytes));
+        nullifiers.iter().map(Nullifier::to_bytes).collect::<Vec<Vec<u8>>>();
 
     let mut count = diesel::update(schema::notes::table)
         .filter(schema::notes::nullifier.eq_any(&serialized_nullifiers))
@@ -254,16 +254,20 @@ pub(crate) fn insert_nullifiers_for_block(
         .execute(conn)?;
 
     count += diesel::insert_into(schema::nullifiers::table)
-        .values(Vec::from_iter(nullifiers.iter().zip(serialized_nullifiers.iter()).map(
-            |(nullifier, bytes)| {
-                (
-                    schema::nullifiers::nullifier.eq(bytes),
-                    schema::nullifiers::nullifier_prefix
-                        .eq(nullifier_prefix_to_raw_sql(get_nullifier_prefix(nullifier))),
-                    schema::nullifiers::block_num.eq(block_num.to_raw_sql()),
-                )
-            },
-        )))
+        .values(
+            nullifiers
+                .iter()
+                .zip(serialized_nullifiers.iter())
+                .map(|(nullifier, bytes)| {
+                    (
+                        schema::nullifiers::nullifier.eq(bytes),
+                        schema::nullifiers::nullifier_prefix
+                            .eq(nullifier_prefix_to_raw_sql(get_nullifier_prefix(nullifier))),
+                        schema::nullifiers::block_num.eq(block_num.to_raw_sql()),
+                    )
+                })
+                .collect::<Vec<_>>(),
+        )
         .execute(conn)?;
 
     Ok(count)

@@ -1,5 +1,5 @@
 use miden_node_proto::generated as proto;
-use miden_node_utils::tracing::{debug, miden_instrument};
+use miden_node_tracing::{debug, miden_instrument};
 
 use super::{Request, RpcBackend, RpcService};
 use crate::{COMPONENT, LOG_TARGET};

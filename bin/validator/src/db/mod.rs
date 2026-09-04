@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::{DbReader, DbWriter};
-use miden_node_utils::tracing::{info, miden_instrument};
+use miden_node_tracing::{info, miden_instrument};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::transaction::TransactionId;
 

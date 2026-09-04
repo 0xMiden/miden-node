@@ -187,7 +187,7 @@ pub fn mock_network_account(
 
     mock_account_with_auth_component(
         AuthNetworkAccount::new(
-            BTreeSet::from_iter(allowed_script_roots),
+            allowed_script_roots.into_iter().collect::<BTreeSet<_>>(),
             FeePolicyManager::mock(FungibleAsset::mock_issuer()),
         )
         .expect("non-empty allowlist should construct"),

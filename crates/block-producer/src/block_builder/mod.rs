@@ -1,11 +1,12 @@
+use std::collections::BTreeSet;
 use std::ops::Deref;
 use std::sync::Arc;
 
 use anyhow::Context;
 use miden_node_store::state::{BlockWriter, State};
+use miden_node_tracing::spawn::spawn_blocking_in_current_span;
+use miden_node_tracing::{ErrorSpanExt, Span, debug, miden_instrument, miden_span_record};
 use miden_node_utils::shutdown::CancellationToken;
-use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::{ErrorSpanExt, debug, miden_instrument, miden_span_record};
 use miden_protocol::batch::{OrderedBatches, ProvenBatch};
 use miden_protocol::block::{
     BlockInputs,
@@ -16,7 +17,6 @@ use miden_protocol::block::{
 };
 use miden_protocol::transaction::TransactionHeader;
 use tokio::time::Duration;
-use tracing::Span;
 
 use crate::errors::{BuildBlockError, StoreError};
 use crate::mempool::SharedMempool;
@@ -218,7 +218,7 @@ impl BlockBuilder {
                 .input_notes()
                 .iter()
                 .cloned()
-                .filter_map(|note| note.header().map(|header| header.id().as_word()))
+                .filter_map(|note| note.header().map(miden_protocol::note::NoteHeader::id))
         });
         let block_references_iter =
             batch_iter.clone().map(Deref::deref).map(ProvenBatch::reference_block_num);
@@ -227,18 +227,43 @@ impl BlockBuilder {
         let created_nullifiers_iter =
             batch_iter.map(Deref::deref).flat_map(ProvenBatch::created_nullifiers);
 
-        let inputs = self
-            .state
-            .view()
-            .get_block_inputs(
-                account_ids_iter.collect(),
-                created_nullifiers_iter.collect(),
-                unauthenticated_notes_iter.collect(),
-                block_references_iter.collect(),
-            )
+        let account_ids = account_ids_iter.collect::<Vec<_>>();
+        let created_nullifiers = created_nullifiers_iter.collect::<Vec<_>>();
+        let mut block_numbers: BTreeSet<_> = block_references_iter.collect();
+        let note_ids = unauthenticated_notes_iter.collect();
+        let view = self.state.view();
+        let reference_block = *view.tip();
+
+        // The reference block must be the chain tip. Its account and nullifier roots must match the
+        // witnesses from this view.
+        let note_inclusion_proofs = view
+            .get_note_inclusion_proofs(reference_block, note_ids)
             .await
-            .map_err(StoreError::GetBlockInputsFailed)
-            .map_err(BuildBlockError::GetBlockInputsFailed)?;
+            .map_err(StoreError::GetNoteInclusionProofsFailed)
+            .map_err(BuildBlockError::FetchBlockInputsFailed)?;
+        block_numbers
+            .extend(note_inclusion_proofs.values().map(|proof| proof.location().block_num()));
+        let partial_blockchain = view
+            .get_block_inclusion_proofs(reference_block, block_numbers)
+            .await
+            .map_err(StoreError::GetBlockInclusionProofsFailed)
+            .map_err(BuildBlockError::FetchBlockInputsFailed)?;
+        let reference_block_header = view
+            .get_block_header(Some(reference_block), false)
+            .await
+            .map_err(StoreError::GetBlockHeaderFailed)
+            .map_err(BuildBlockError::FetchBlockInputsFailed)?
+            .0
+            .expect("reference block header should exist");
+        let state_witnesses = view.get_state_witnesses(&account_ids, &created_nullifiers);
+
+        let inputs = BlockInputs::new(
+            reference_block_header,
+            partial_blockchain,
+            state_witnesses.account_witnesses,
+            state_witnesses.nullifier_witnesses,
+            note_inclusion_proofs,
+        );
 
         // Check that the latest committed block in the store matches our expectations.
         //

@@ -99,12 +99,12 @@ jobs:
           images="$(
             jq -cn '
               [
-                {"component":"node","bin":"miden-node","port":57291},
-                {"component":"validator","bin":"miden-validator","port":50101},
-                {"component":"ntx-builder","bin":"miden-ntx-builder","port":50301},
-                {"component":"remote-prover","bin":"miden-remote-prover","port":50051},
-                {"component":"network-monitor","bin":"miden-network-monitor","port":3000},
-                {"component":"node-tps-benchmark","bin":"miden-benchmark","target":"runtime-tool"}
+                {"component":"node",               "bin":"miden-node",            "port":57291, "target":"runtime"},
+                {"component":"validator",          "bin":"miden-validator",       "port":50101, "target":"runtime"},
+                {"component":"ntx-builder",        "bin":"miden-ntx-builder",     "port":50301, "target":"runtime"},
+                {"component":"remote-prover",      "bin":"miden-remote-prover",   "port":50051, "target":"runtime"},
+                {"component":"network-monitor",    "bin":"miden-network-monitor", "port":3000,  "target":"runtime"},
+                {"component":"node-tps-benchmark", "bin":"miden-benchmark",                     "target":"runtime-tool"}
               ]
             '
           )"
@@ -168,9 +168,88 @@ jobs:
             echo "tag=${ref_name}"
           } >> "${GITHUB_OUTPUT}"
 
-  dry-run-docker:
-    name: Build ${{ matrix.component }}
+  build-binaries:
+    name: Build binaries (${{ matrix.platform }})
     needs: preflight
+    runs-on: warp-ubuntu-latest-x64-8x
+    permissions:
+      contents: read
+      # WarpBuild uses OIDC to authenticate its remote builder.
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            architecture: amd64
+          - platform: linux/arm64
+            architecture: arm64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          persist-credentials: false
+
+      - name: Build binaries
+        uses: WarpBuilds/build-push-action@ec038a9f4b87a7c7ccb50ac7a26a90d46a610a81 # v6.0.9
+        with:
+          context: .
+          push: false
+          file: ./Dockerfile
+          target: build-report
+          platforms: ${{ matrix.platform }}
+          profile-name: ${{ vars.WARPBUILD_DOCKER_BUILDER_PROFILE }}
+          pull: true
+          outputs: type=local,dest=${{ runner.temp }}/kache-report
+
+      - name: Upload Kache cache report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: kache-report-${{ matrix.architecture }}
+          path: ${{ runner.temp }}/kache-report/kache-report.md
+          if-no-files-found: error
+          retention-days: 1
+
+  kache-summary:
+    name: Summarize Kache cache
+    needs: build-binaries
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Download amd64 Kache cache report
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: kache-report-amd64
+          path: ${{ runner.temp }}/kache-reports/amd64
+
+      - name: Download arm64 Kache cache report
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: kache-report-arm64
+          path: ${{ runner.temp }}/kache-reports/arm64
+
+      - name: Add Kache cache summary
+        run: |
+          {
+            echo "<details>"
+            echo "<summary>Docker Kache stats</summary>"
+            echo
+            for architecture in amd64 arm64; do
+              echo "<details>"
+              printf '<summary><code>linux/%s</code></summary>\n\n' "${architecture}"
+              cat "${RUNNER_TEMP}/kache-reports/${architecture}/kache-report.md"
+              echo
+              echo "</details>"
+              echo
+            done
+            echo "</details>"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  dry-run-docker:
+    name: Validate ${{ matrix.component }} image
+    needs: [preflight, build-binaries]
     runs-on: warp-ubuntu-latest-x64-8x
     permissions:
       contents: read
@@ -185,31 +264,14 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ needs.preflight.outputs.commit }}
-          fetch-depth: 0
           persist-credentials: false
 
-      - name: Resolve build inputs
-        id: build-inputs
-        env:
-          COMPONENT: ${{ matrix.component }}
-        run: |
-          set -euo pipefail
-
-          if [[ "${COMPONENT}" == "faucet" ]]; then
-            context="$(docker compose --profile faucet config --format json | jq -er '.services.faucet.build.context')"
-            echo "context=${context}" >> "${GITHUB_OUTPUT}"
-            echo "file=Dockerfile" >> "${GITHUB_OUTPUT}"
-          else
-            echo "context=." >> "${GITHUB_OUTPUT}"
-            echo "file=./Dockerfile" >> "${GITHUB_OUTPUT}"
-          fi
-
-      - name: Build Docker image
+      - name: Validate Docker image
         uses: WarpBuilds/build-push-action@ec038a9f4b87a7c7ccb50ac7a26a90d46a610a81 # v6.0.9
         with:
-          context: ${{ steps.build-inputs.outputs.context }}
+          context: .
           push: false
-          file: ${{ steps.build-inputs.outputs.file }}
+          file: ./Dockerfile
           target: ${{ matrix.target }}
           platforms: ${{ env.DOCKER_PLATFORMS }}
           profile-name: ${{ vars.WARPBUILD_DOCKER_BUILDER_PROFILE }}
@@ -232,7 +294,6 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ needs.preflight.outputs.commit }}
-          fetch-depth: 0
           persist-credentials: false
 
       - name: Dry-run Compose publishing
@@ -272,7 +333,6 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ needs.preflight.outputs.commit }}
-          fetch-depth: 0
           persist-credentials: false
 
       - name: Log in to the Container registry
@@ -282,28 +342,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Resolve build inputs
-        id: build-inputs
-        env:
-          COMPONENT: ${{ matrix.component }}
-        run: |
-          set -euo pipefail
-
-          if [[ "${COMPONENT}" == "faucet" ]]; then
-            context="$(docker compose --profile faucet config --format json | jq -er '.services.faucet.build.context')"
-            echo "context=${context}" >> "${GITHUB_OUTPUT}"
-            echo "file=Dockerfile" >> "${GITHUB_OUTPUT}"
-          else
-            echo "context=." >> "${GITHUB_OUTPUT}"
-            echo "file=./Dockerfile" >> "${GITHUB_OUTPUT}"
-          fi
-
       - name: Build and push Docker image
         uses: WarpBuilds/build-push-action@ec038a9f4b87a7c7ccb50ac7a26a90d46a610a81 # v6.0.9
         with:
-          context: ${{ steps.build-inputs.outputs.context }}
+          context: .
           push: true
-          file: ${{ steps.build-inputs.outputs.file }}
+          file: ./Dockerfile
           target: ${{ matrix.target }}
           platforms: ${{ env.DOCKER_PLATFORMS }}
           profile-name: ${{ vars.WARPBUILD_DOCKER_BUILDER_PROFILE }}
@@ -330,7 +374,6 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ needs.preflight.outputs.commit }}
-          fetch-depth: 0
           persist-credentials: false
 
       - name: Log in to the Container registry

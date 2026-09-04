@@ -5,7 +5,8 @@ use futures::FutureExt;
 use futures::future::BoxFuture;
 use http::header::{ACCEPT, ToStrError};
 use mediatype::{Name, ReadParams};
-use miden_node_utils::{ErrorReport, FlattenResult};
+use miden_node_tracing::ErrorReport;
+use miden_node_utils::FlattenResult;
 use miden_protocol::{Word, WordError};
 use semver::{Comparator, Version, VersionReq};
 use tower::{Layer, Service};
@@ -379,7 +380,7 @@ impl FromStr for QValue {
                 //
                 // This recomposition removes the special casing for these.
                 let digits = match rest {
-                    [] => [b'0', b'0', b'0'],
+                    [] => *b"000",
                     [a] => [*a, b'0', b'0'],
                     [a, b] => [*a, *b, b'0'],
                     [a, b, c] => [*a, *b, *c],

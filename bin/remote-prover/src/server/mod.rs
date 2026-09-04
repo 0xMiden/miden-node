@@ -2,12 +2,11 @@ use std::num::NonZeroUsize;
 
 use anyhow::Context;
 use miden_node_proto::server::{remote_prover_api, remote_prover_worker_status_api};
+use miden_node_tracing::grpc::grpc_trace_fn;
+use miden_node_tracing::panic::catch_panic_layer_fn;
+use miden_node_tracing::{OpenTelemetry, info};
 use miden_node_utils::cors::cors_for_grpc_web_layer;
-use miden_node_utils::logging::OpenTelemetry;
-use miden_node_utils::panic::catch_panic_layer_fn;
 use miden_node_utils::shutdown::CancellationToken;
-use miden_node_utils::tracing::grpc::grpc_trace_fn;
-use miden_node_utils::tracing::info;
 use proof_kind::ProofKind;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;

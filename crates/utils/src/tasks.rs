@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::future::Future;
 
 use anyhow::Context;
+use miden_node_tracing::warn;
 use tokio::task::{Id, JoinError, JoinSet};
 
 use crate::shutdown::CancellationToken;
-use crate::tracing::warn;
 
 /// A named task set for supervising concurrently-running Tokio tasks.
 ///

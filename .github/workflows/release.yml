@@ -151,9 +151,9 @@ jobs:
 
       - uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
-          shared-key: release-dry-run-crates
+          shared-key: release-crate-${{ matrix.name }}
           cache-provider: warpbuild
-          save-if: false
+          save-if: true
 
       - name: Check package builds
         env:
@@ -180,7 +180,7 @@ jobs:
         with:
           shared-key: release-dry-run-crates
           cache-provider: warpbuild
-          save-if: false
+          save-if: true
 
       - name: Dry-run cargo publish without verification
         run: cargo publish --workspace --dry-run --no-verify --locked
@@ -217,9 +217,9 @@ jobs:
 
       - uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
-          shared-key: release-msrv
+          shared-key: release-msrv-${{ matrix.name }}
           cache-provider: warpbuild
-          save-if: false
+          save-if: true
 
       - name: Install cargo-binstall
         uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18

@@ -107,6 +107,19 @@ description = "Fixed release automation metadata."
 }
 
 #[test]
+fn accepts_note_transport_scope() {
+    let body = valid_body(
+        r#"[[entry]]
+scope       = "note-transport"
+impact      = "added"
+description = "Added the note transport service."
+"#,
+    );
+
+    verify_pr_body(&body).unwrap();
+}
+
+#[test]
 fn accepts_no_changelog_marker() {
     let body = valid_body(
         r#"changelog = "none"

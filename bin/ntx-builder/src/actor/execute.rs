@@ -3,10 +3,17 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use backon::ExponentialBuilder;
+use miden_node_tracing::spawn::spawn_blocking_in_current_span;
+use miden_node_tracing::{
+    ErrorSpanExt,
+    Instrument,
+    info,
+    miden_instrument,
+    miden_span_record,
+    warn,
+};
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::retry::{self, Retryable};
-use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::{ErrorSpanExt, info, miden_instrument, miden_span_record, warn};
 use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
@@ -50,7 +57,6 @@ use miden_tx::{
     TransactionMastStore,
     TransactionProverError,
 };
-use tracing::Instrument;
 
 use crate::actor::candidate::{SponsoredFeatureNote, TransactionCandidate};
 use crate::clients::{RemoteTransactionProver, RpcClient, RpcError};
@@ -281,7 +287,7 @@ impl NtxContext {
                 // the parent runtime handle to drive async RPC callbacks.
                 let ctx = self.clone();
                 let handle = tokio::runtime::Handle::current();
-                let span = tracing::Span::current();
+                let span = miden_node_tracing::Span::current();
 
                 let (executed_tx, failed_notes, deferred_notes, oversized_notes, scripts_to_cache) =
                     spawn_blocking_in_current_span(move || {
@@ -336,7 +342,7 @@ impl NtxContext {
             })
             .in_current_span()
             .await
-            .inspect_err(|err| tracing::Span::current().set_error(err))
+            .inspect_err(|err| miden_node_tracing::Span::current().set_error(err))
         }
     }
 
@@ -706,27 +712,17 @@ struct NtxDataStore {
     /// Scripts fetched from the remote RPC service during execution, to be persisted by the
     /// coordinator.
     fetched_scripts: Arc<Mutex<Vec<(Word, NoteScript)>>>,
-    /// Mapping of storage map roots to storage slot names observed during various calls.
+    /// Maps storage map roots to storage slot names.
     ///
-    /// The registered slot names are subsequently used to retrieve storage map witnesses from the
-    /// RPC service. We need this because the RPC interface (and the underlying SMT forest) use storage
-    /// slot names, but the `DataStore` interface works with tree roots. To get around this problem
-    /// we populate this map when:
-    /// - The the native account is loaded (in `get_transaction_inputs()`).
-    /// - When a foreign account is loaded (in `get_foreign_account_inputs`).
+    /// The RPC service identifies maps by slot name. The [`DataStore`] interface identifies maps by
+    /// root. Native and foreign account loading populate this map before witness retrieval.
     ///
-    /// The assumption here are:
-    /// - Once an account is loaded, the mapping between `(account_id, map_root)` and slot names do
-    ///   not change. This is always the case.
-    /// - New storage slots created during transaction execution will not be accesses in the same
-    ///   transaction. The mechanism for adding new storage slots is not implemented yet, but the
-    ///   plan for it is consistent with this assumption.
+    /// The mapping for a loaded account remains stable during transaction execution. A transaction
+    /// cannot access a storage slot that it creates during the same execution.
     ///
-    /// One nuance worth mentioning: it is possible that there could be a root collision where an
-    /// account has two storage maps with the same root. In this case, the map will contain only a
-    /// single entry with the storage slot name that was added last. Thus, technically, requests
-    /// to the RPC service could be "wrong", but given that two identical maps have identical witnesses
-    /// this does not cause issues in practice.
+    /// Two storage maps can have the same root. In this case, the last inserted slot name replaces
+    /// the other slot name. Identical maps have identical witnesses, so the selected slot does not
+    /// change the witness.
     storage_slots: Arc<Mutex<HashMap<(AccountId, Word), StorageSlotName>>>,
     /// Per-request retry backoff for transient RPC failures.
     request_backoff: ExponentialBuilder,

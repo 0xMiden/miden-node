@@ -20,12 +20,12 @@ use diesel::{
     SqliteConnection,
 };
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, AccountVaultDetails};
+use miden_node_tracing::miden_instrument;
 use miden_node_utils::limiter::{
     MAX_RESPONSE_PAYLOAD_BYTES,
     QueryParamAccountIdLimit,
     QueryParamLimiter,
 };
-use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
@@ -163,8 +163,7 @@ pub(crate) fn select_account(
 
     let summary: AccountSummary = raw.try_into()?;
 
-    // Backfill account details from database For private accounts, we don't store full details in
-    // the database
+    // Public accounts store full details. Private accounts store only the summary.
     let details = if account_id.is_public() {
         Some(select_full_account(conn, account_id)?)
     } else {
@@ -174,21 +173,10 @@ pub(crate) fn select_account(
     Ok(AccountInfo { summary, details })
 }
 
-/// Reconstruct full Account from database tables for the latest account state
+/// Reconstructs the latest account state from database tables.
 ///
-/// This function queries the database tables to reconstruct a complete Account object:
-/// - Code from `account_codes` table
-/// - Nonce and storage header from `accounts` table
-/// - Storage map entries from `account_storage_map_values` table
-/// - Vault from `account_vault_assets` table
-///
-/// # Note
-///
-/// A stop-gap solution to retain store API and construct `AccountInfo` types.
-/// The function should ultimately be removed, and any queries be served from the
-/// `State` which contains an `SmtForest` to serve the latest and most recent
-/// historical data.
-// TODO: remove eventually once refactoring is complete
+/// Reads code from `account_codes`, the nonce and storage header from `accounts`, map entries from
+/// `account_storage_map_values`, and assets from `account_vault_assets`.
 pub(crate) fn select_full_account(
     conn: &mut SqliteConnection,
     account_id: AccountId,
@@ -290,11 +278,12 @@ pub(crate) fn select_account_commitments_paged(
 
     let raw = query.load::<(Vec<u8>, Vec<u8>)>(conn)?;
 
-    let mut commitments = Result::<Vec<_>, DatabaseError>::from_iter(raw.into_iter().map(
-        |(ref account, ref commitment)| {
+    let mut commitments = raw
+        .into_iter()
+        .map(|(ref account, ref commitment)| {
             Ok((AccountId::read_from_bytes(account)?, Word::read_from_bytes(commitment)?))
-        },
-    ))?;
+        })
+        .collect::<Result<Vec<_>, DatabaseError>>()?;
 
     // If we got more than page_size, there are more results
     let next_cursor = if commitments.len() > page_size.get() {
@@ -387,9 +376,12 @@ pub(crate) fn select_public_account_ids_paged(
 
     let raw = query.load::<Vec<u8>>(conn)?;
 
-    let mut account_ids: Vec<AccountId> = Result::from_iter(raw.into_iter().map(|bytes| {
-        AccountId::read_from_bytes(&bytes).map_err(DatabaseError::DeserializationError)
-    }))?;
+    let mut account_ids: Vec<AccountId> = raw
+        .into_iter()
+        .map(|bytes| {
+            AccountId::read_from_bytes(&bytes).map_err(DatabaseError::DeserializationError)
+        })
+        .collect::<Result<_, _>>()?;
 
     // If we got more than page_size, there are more results
     let next_cursor = if account_ids.len() > page_size.get() {
@@ -456,8 +448,9 @@ pub(crate) fn select_public_account_state_roots_paged(
 
     let raw = query.load::<(Vec<u8>, Option<Vec<u8>>, Option<Vec<u8>>)>(conn)?;
 
-    let mut accounts: Vec<PublicAccountStateRoots> = Result::from_iter(raw.into_iter().map(
-        |(account_id_bytes, vault_root_bytes, storage_header_bytes)| {
+    let mut accounts: Vec<PublicAccountStateRoots> = raw
+        .into_iter()
+        .map(|(account_id_bytes, vault_root_bytes, storage_header_bytes)| {
             let account_id = AccountId::read_from_bytes(&account_id_bytes)
                 .map_err(DatabaseError::DeserializationError)?;
             let vault_root_bytes = vault_root_bytes.ok_or_else(|| {
@@ -476,8 +469,8 @@ pub(crate) fn select_public_account_state_roots_paged(
                 vault_root: Word::read_from_bytes(&vault_root_bytes)?,
                 storage_header: AccountStorageHeader::read_from_bytes(&storage_header_bytes)?,
             })
-        },
-    ))?;
+        })
+        .collect::<Result<_, _>>()?;
 
     // If we got more than page_size, there are more results.
     let next_cursor = if accounts.len() > page_size.get() {
@@ -522,8 +515,8 @@ pub(crate) fn select_account_vault_assets(
     account_id: AccountId,
     block_range: RangeInclusive<BlockNumber>,
 ) -> Result<(BlockNumber, Vec<AccountVaultValue>), DatabaseError> {
-    // TODO: These limits should be given by the protocol. See miden-protocol/issues/1770 for more
-    // details
+    // The protocol does not define these limits. Derive a conservative row limit from the response
+    // payload limit.
     const ROW_OVERHEAD_BYTES: usize = 2 * size_of::<Word>() + size_of::<u32>(); // key + asset + block_num
     const MAX_ROWS: usize = MAX_RESPONSE_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
 
@@ -840,8 +833,9 @@ pub(crate) fn select_latest_account_storage(
     let (storage_header, map_entries_by_slot) =
         select_latest_account_storage_components(conn, account_id)?;
     // Reconstruct StorageSlots from header slots + map entries
-    let slots =
-        Result::<Vec<_>, DatabaseError>::from_iter(storage_header.slots().map(|slot_header| {
+    let slots = storage_header
+        .slots()
+        .map(|slot_header| {
             let slot = match slot_header.slot_type() {
                 StorageSlotType::Value => {
                     // For value slots, the header value IS the slot value
@@ -856,7 +850,8 @@ pub(crate) fn select_latest_account_storage(
                 },
             };
             Ok(slot)
-        }))?;
+        })
+        .collect::<Result<Vec<_>, DatabaseError>>()?;
 
     Ok(AccountStorage::new(slots)?)
 }
@@ -886,7 +881,7 @@ pub(crate) fn select_latest_account_storage_components(
     Ok((header, entries))
 }
 
-// TODO this is expensive and should only be called from tests
+// This query is expensive because it loads every current storage map entry for the account.
 fn select_latest_storage_map_entries_all(
     conn: &mut SqliteConnection,
     account_id: &AccountId,
@@ -1490,7 +1485,6 @@ pub(crate) fn upsert_accounts(
             .set(&account_value)
             .execute(conn)?;
 
-        // insert pending storage map entries TODO consider batching
         for (acc_id, slot_name, key, value) in pending_storage_inserts {
             if account_is_new {
                 insert_account_storage_map_value_inner(
@@ -1701,7 +1695,7 @@ pub(crate) fn prune_history(
     prune_tip: BlockNumber,
 ) -> Result<(usize, usize, usize), DatabaseError> {
     let cutoff_block = i64::from(prune_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION));
-    tracing::Span::current().record("cutoff_block", cutoff_block);
+    miden_node_tracing::Span::current().record("cutoff_block", cutoff_block);
     let vault_deleted = prune_account_vault_assets(conn, cutoff_block)?;
     let storage_deleted = prune_account_storage_map_values(conn, cutoff_block)?;
     let codes_deleted = prune_account_codes(conn, cutoff_block)?;

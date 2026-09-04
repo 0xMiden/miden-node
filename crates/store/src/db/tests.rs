@@ -141,7 +141,7 @@ fn precomputed_states_from_account(account: &Account) -> PrecomputedPublicAccoun
             .collect(),
     };
 
-    PrecomputedPublicAccountStates::from_iter([(account.id(), state)])
+    [(account.id(), state)].into_iter().collect::<PrecomputedPublicAccountStates>()
 }
 
 #[test]
@@ -803,7 +803,7 @@ fn notes() {
     // test query notes by id
     let notes = vec![note.clone(), note2];
 
-    let note_ids = Vec::from_iter(notes.iter().map(|note| NoteId::from_raw(note.note_id)));
+    let note_ids = notes.iter().map(|note| NoteId::from_raw(note.note_id)).collect::<Vec<_>>();
 
     let res = queries::select_notes_by_id(conn, &note_ids).unwrap();
     assert_eq!(res, notes);
@@ -1104,7 +1104,9 @@ fn sql_account_storage_map_values_insertion() {
 
     // Insert at block 1
     let map1 = StorageMapPatch::from_iters([], [(key1, value1), (key2, value2)]);
-    let delta1 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotPatch::Map(map1))]);
+    let delta1 = [(slot_name.clone(), StorageSlotPatch::Map(map1))]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
     let storage1 = AccountStoragePatch::from_raw(delta1).unwrap();
     let patch1 = AccountPatch::new(
         account_id,
@@ -1127,7 +1129,9 @@ fn sql_account_storage_map_values_insertion() {
 
     // Update key1 at block 2
     let map2 = StorageMapPatch::from_iters([], [(key1, value3)]);
-    let delta2 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotPatch::Map(map2))]);
+    let delta2 = [(slot_name.clone(), StorageSlotPatch::Map(map2))]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
     let storage2 = AccountStoragePatch::from_raw(delta2).unwrap();
     let patch2 = AccountPatch::new(
         account_id,
@@ -3466,13 +3470,15 @@ fn account_state_forest_matches_db_storage_map_roots_across_updates() {
     // Block 1: Add storage map entries and a storage value
     let map_patch_1 = StorageMapPatch::from_iters([], [(key1, value1), (key2, value2)]);
 
-    let raw_1 = BTreeMap::from_iter([
+    let raw_1 = [
         (slot_map.clone(), StorageSlotPatch::Map(map_patch_1)),
         (
             slot_value.clone(),
             StorageSlotPatch::Value(StorageValuePatch::Update { value: value1 }),
         ),
-    ]);
+    ]
+    .into_iter()
+    .collect::<BTreeMap<_, _>>();
     let storage_1 = AccountStoragePatch::from_raw(raw_1).unwrap();
     let patch_1 = AccountPatch::new(
         account_id,
@@ -3499,13 +3505,15 @@ fn account_state_forest_matches_db_storage_map_roots_across_updates() {
     // Block 2: Delete storage map entry (set to EMPTY_WORD) and delete storage value
     let map_patch_2 = StorageMapPatch::from_iters([], [(key1, EMPTY_WORD)]);
 
-    let raw_2 = BTreeMap::from_iter([
+    let raw_2 = [
         (slot_map.clone(), StorageSlotPatch::Map(map_patch_2)),
         (
             slot_value.clone(),
             StorageSlotPatch::Value(StorageValuePatch::Update { value: EMPTY_WORD }),
         ),
-    ]);
+    ]
+    .into_iter()
+    .collect::<BTreeMap<_, _>>();
     let storage_2 = AccountStoragePatch::from_raw(raw_2).unwrap();
     let patch_2 = AccountPatch::new(
         account_id,
@@ -3532,13 +3540,15 @@ fn account_state_forest_matches_db_storage_map_roots_across_updates() {
     // Block 3: Re-add same value as block 1 and add different map entry
     let map_patch_3 = StorageMapPatch::from_iters([], [(key2, value3)]); // Update existing key
 
-    let raw_3 = BTreeMap::from_iter([
+    let raw_3 = [
         (slot_map.clone(), StorageSlotPatch::Map(map_patch_3)),
         (
             slot_value.clone(),
             StorageSlotPatch::Value(StorageValuePatch::Update { value: value1 }),
         ), // Same as block 1
-    ]);
+    ]
+    .into_iter()
+    .collect::<BTreeMap<_, _>>();
     let storage_3 = AccountStoragePatch::from_raw(raw_3).unwrap();
     let patch_3 = AccountPatch::new(
         account_id,
@@ -3612,7 +3622,9 @@ fn account_state_forest_shared_roots_not_deleted_prematurely() {
     let map_patch = StorageMapPatch::from_iters([], [(key1, value1), (key2, value2)]);
 
     // Setups a single slot with a map and two key-value-pairs
-    let raw = BTreeMap::from_iter([(slot_name.clone(), StorageSlotPatch::Map(map_patch.clone()))]);
+    let raw = [(slot_name.clone(), StorageSlotPatch::Map(map_patch.clone()))]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
     let storage = AccountStoragePatch::from_raw(raw).unwrap();
 
     // Account 1
@@ -3662,8 +3674,9 @@ fn account_state_forest_shared_roots_not_deleted_prematurely() {
 
     // Update accounts 1,2,3
     let map_patch_update = StorageMapPatch::from_iters([], [(key1, num_to_word(1001))]); // Slight change
-    let raw_update =
-        BTreeMap::from_iter([(slot_name.clone(), StorageSlotPatch::Map(map_patch_update))]);
+    let raw_update = [(slot_name.clone(), StorageSlotPatch::Map(map_patch_update))]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
     let storage_update = AccountStoragePatch::from_raw(raw_update).unwrap();
     let patch2_update = AccountPatch::new(
         account2,
@@ -3739,7 +3752,9 @@ fn account_state_forest_retains_latest_after_100_blocks_and_pruning() {
     // Create storage map with two entries
     let map_patch = StorageMapPatch::from_iters([], [(key1, value1), (key2, value2)]);
 
-    let raw = BTreeMap::from_iter([(slot_map.clone(), StorageSlotPatch::Map(map_patch))]);
+    let raw = [(slot_map.clone(), StorageSlotPatch::Map(map_patch))]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
     let storage_patch = AccountStoragePatch::from_raw(raw).unwrap();
 
     // Create vault with one asset
@@ -3793,7 +3808,9 @@ fn account_state_forest_retains_latest_after_100_blocks_and_pruning() {
     let value1_new = num_to_word(3000);
     let map_patch_51 = StorageMapPatch::from_iters([], [(key1, value1_new)]);
 
-    let raw_51 = BTreeMap::from_iter([(slot_map.clone(), StorageSlotPatch::Map(map_patch_51))]);
+    let raw_51 = [(slot_map.clone(), StorageSlotPatch::Map(map_patch_51))]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
     let storage_patch_51 = AccountStoragePatch::from_raw(raw_51).unwrap();
 
     let asset_51 = FungibleAsset::new(faucet_id, 200).unwrap();
@@ -4154,7 +4171,9 @@ fn account_state_forest_preserves_most_recent_storage_map_only() {
     let block_1 = BlockNumber::from(1);
     let map_patch = StorageMapPatch::from_iters([], [(key1, value1)]);
 
-    let raw = BTreeMap::from_iter([(slot_map.clone(), StorageSlotPatch::Map(map_patch))]);
+    let raw = [(slot_map.clone(), StorageSlotPatch::Map(map_patch))]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
     let storage_patch = AccountStoragePatch::from_raw(raw).unwrap();
 
     let delta_1 = AccountPatch::new(
@@ -4210,10 +4229,12 @@ fn account_state_forest_preserves_most_recent_storage_value_slot() {
     // Block 1: Create storage value slot
     let block_1 = BlockNumber::from(1);
 
-    let raw = BTreeMap::from_iter([(
+    let raw = [(
         slot_value.clone(),
         StorageSlotPatch::Value(StorageValuePatch::Update { value: value1 }),
-    )]);
+    )]
+    .into_iter()
+    .collect::<BTreeMap<_, _>>();
     let storage_patch = AccountStoragePatch::from_raw(raw).unwrap();
 
     let delta_1 = AccountPatch::new(
@@ -4282,14 +4303,16 @@ fn account_state_forest_preserves_mixed_slots_independently() {
 
     let map_patch_b = StorageMapPatch::from_iters([], [(key1, value1)]);
 
-    let raw = BTreeMap::from_iter([
+    let raw = [
         (slot_map_a.clone(), StorageSlotPatch::Map(map_patch_a)),
         (slot_map_b.clone(), StorageSlotPatch::Map(map_patch_b)),
         (
             slot_value.clone(),
             StorageSlotPatch::Value(StorageValuePatch::Update { value: value_slot_data }),
         ),
-    ]);
+    ]
+    .into_iter()
+    .collect::<BTreeMap<_, _>>();
     let storage_patch = AccountStoragePatch::from_raw(raw).unwrap();
 
     let delta_1 = AccountPatch::new(
@@ -4313,8 +4336,9 @@ fn account_state_forest_preserves_mixed_slots_independently() {
 
     let map_patch_a_update = StorageMapPatch::from_iters([], [(key1, value2)]);
 
-    let raw_51 =
-        BTreeMap::from_iter([(slot_map_a.clone(), StorageSlotPatch::Map(map_patch_a_update))]);
+    let raw_51 = [(slot_map_a.clone(), StorageSlotPatch::Map(map_patch_a_update))]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
     let storage_patch_51 = AccountStoragePatch::from_raw(raw_51).unwrap();
 
     let delta_51 = AccountPatch::new(

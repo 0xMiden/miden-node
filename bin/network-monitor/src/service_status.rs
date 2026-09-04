@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use miden_node_proto::generated as proto;
 use miden_node_proto::generated::rpc::{BlockProducerStatus, RpcStatus};
-use miden_node_utils::tracing::warn;
+use miden_node_tracing::warn;
 use serde::{Deserialize, Serialize};
 
 use crate::LOG_TARGET;
@@ -225,8 +225,8 @@ pub struct NoteTransportStatusDetails {
     pub total_tags: Option<u64>,
     /// Unix timestamp of the most recent note activity across all tags.
     ///
-    /// Sourced from the per-tag stats, which the current server does not populate yet
-    /// (`notes_per_tag` is a TODO server-side); stays `None` and renders as `-` until it does.
+    /// Derived from the per-tag statistics. An empty `notes_per_tag` list produces `None`, which the
+    /// user interface renders as `-`.
     pub last_activity: Option<u64>,
 }
 

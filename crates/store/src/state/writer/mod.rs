@@ -17,8 +17,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use miden_node_utils::ErrorReport;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_tracing::{ErrorReport, miden_instrument};
 use miden_protocol::block::SignedBlock;
 use tokio::sync::{mpsc, oneshot};
 pub(in crate::state) use worker::WriteWorker;
@@ -93,7 +92,7 @@ pub(super) struct WriteRequest {
     result_tx: oneshot::Sender<Result<(), ApplyBlockError>>,
     /// Span of the `apply_block` caller. The worker runs the write under it, keeping the write path
     /// in the caller's trace across the channel hop.
-    span: tracing::Span,
+    span: miden_node_tracing::Span,
 }
 
 impl BlockWriter {
@@ -136,7 +135,7 @@ impl BlockWriter {
             .send(WriteRequest {
                 signed_block,
                 result_tx,
-                span: tracing::Span::current(),
+                span: miden_node_tracing::Span::current(),
             })
             .await
             .map_err(|e| ApplyBlockError::WriterTaskSendFailed(e.as_report()))?;

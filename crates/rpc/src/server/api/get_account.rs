@@ -8,10 +8,9 @@ use miden_node_proto::domain::account::{
 };
 use miden_node_proto::generated as proto;
 use miden_node_store::GetAccountError;
+use miden_node_tracing::{debug, info_span, miden_instrument, miden_span_record};
 use miden_node_utils::limiter::{QueryParamStorageMapKeyTotalLimit, QueryParamStorageMapSlotLimit};
-use miden_node_utils::tracing::{debug, miden_instrument, miden_span_record};
 use tonic::Status;
-use tracing::info_span;
 
 use super::{RpcService, check};
 use crate::{COMPONENT, LOG_TARGET};

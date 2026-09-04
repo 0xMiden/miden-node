@@ -83,10 +83,8 @@ fn rustfmt_generated(dir: &Path) -> miette::Result<()> {
         return Ok(());
     }
 
-    // Just ignore output and exit status. The `rustfmt` binary is part of the Rust toolchain even
-    // if the `rustfmt` component is not installed, and it will print a warning and exit with status
-    // code 1. We don't actually care about formatting in this case, so we can just ignore the
-    // error.
+    // Ignore the output and exit status. The `rustfmt` binary prints a warning and exits with
+    // status code 1 when the component is not installed. Generated files can remain unformatted.
     let _output = Command::new("rustfmt")
         .args(["--edition", "2024"])
         .args(&rs_files)
@@ -112,7 +110,7 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) -> miette::Re
 
 /// Generate `mod.rs` which includes all files in the folder as submodules.
 fn generate_mod_rs(dst_dir: impl AsRef<Path>) -> std::io::Result<()> {
-    // I couldn't find any `codegen::` function for `mod <module>;`, so we generate it manually.
+    // The codegen API has no function for a `mod <module>;` declaration. Generate it directly.
     let mut modules = Vec::new();
 
     for entry in fs::read_dir(dst_dir.as_ref())? {
@@ -154,7 +152,7 @@ fn generate_server_modules(
                 }
 
                 let service_name = to_snake_case(service_name);
-                let module_name = format!("{}_{}", &package, service_name);
+                let module_name = format!("{package}_{service_name}");
 
                 let contents =
                     Service::from_descriptor(service, &package)?.generate().scope().to_string();
@@ -253,7 +251,7 @@ impl Service {
     /// {}
     /// ```
     fn service_trait(&self) -> Trait {
-        let mut ret = Trait::new(format!("{}Service", &self.name));
+        let mut ret = Trait::new(format!("{}Service", self.name));
         ret.vis("pub");
 
         for method in &self.unary_methods {
@@ -444,11 +442,11 @@ impl UnaryMethod {
     ///         request: tonic::Request<<Method::Request>>,
     ///     ) -> tonic::Result<<Method::response>> {
     ///         let (metadata, extensions, message) = request.into_parts();
-    ///         tracing::Span::current().record("rpc.request.size", prost::Message::encoded_len(&message));
+    ///         miden_node_tracing::Span::current().record("rpc.request.size", prost::Message::encoded_len(&message));
     ///         let input = Self::decode(message)?;
     ///         let output = self.handle(input, &metadata, &extensions).await?;
     ///         let response = Self::encode(output)?;
-    ///         tracing::Span::current().record("rpc.response.size", prost::Message::encoded_len(&response));
+    ///         miden_node_tracing::Span::current().record("rpc.response.size", prost::Message::encoded_len(&response));
     ///         Ok(response)
     ///     }
     /// }
@@ -466,7 +464,7 @@ impl UnaryMethod {
 
         ret.new_fn("encode")
             .arg("output", "Self::Output")
-            .ret(format!("tonic::Result<{}>", &self.response));
+            .ret(format!("tonic::Result<{}>", self.response));
 
         ret.new_fn("handle")
             .set_async(true)
@@ -479,17 +477,17 @@ impl UnaryMethod {
         ret.new_fn("full")
             .set_async(true)
             .arg_ref_self()
-            .arg("request", format!("tonic::Request<{}>", &self.request))
-            .ret(format!("tonic::Result<{}>", &self.response))
+            .arg("request", format!("tonic::Request<{}>", self.request))
+            .ret(format!("tonic::Result<{}>", self.response))
             .line("let (metadata, extensions, message) = request.into_parts();")
             .line(
-                r#"tracing::Span::current().record("rpc.request.size", prost::Message::encoded_len(&message));"#,
+                r#"miden_node_tracing::Span::current().record("rpc.request.size", prost::Message::encoded_len(&message));"#,
             )
             .line("let input = Self::decode(message)?;")
             .line("let output = self.handle(input, &metadata, &extensions).await?;")
             .line("let response = Self::encode(output)?;")
             .line(
-                r#"tracing::Span::current().record("rpc.response.size", prost::Message::encoded_len(&response));"#,
+                r#"miden_node_tracing::Span::current().record("rpc.response.size", prost::Message::encoded_len(&response));"#,
             )
             .line("Ok(response)");
 
@@ -527,7 +525,7 @@ impl ServerStream {
     ///     async fn full(&self, request: tonic::Request<<Method::request>>) -> tonic::Result<Pin<Box<dyn Stream<...>>>> {
     ///         use tokio_stream::StreamExt as _;
     ///         let (metadata, extensions, message) = request.into_parts();
-    ///         tracing::Span::current().record("rpc.request.size", prost::Message::encoded_len(&message));
+    ///         miden_node_tracing::Span::current().record("rpc.request.size", prost::Message::encoded_len(&message));
     ///         let input = Self::decode(message)?;
     ///         let stream = self.handle(input, &metadata, &extensions).await?;
     ///         Ok(Box::pin(stream.map(|item| item.and_then(Self::encode))))
@@ -558,7 +556,7 @@ impl ServerStream {
 
         ret.new_fn("encode")
             .arg("item", "Self::Item")
-            .ret(format!("tonic::Result<{}>", &self.response));
+            .ret(format!("tonic::Result<{}>", self.response));
 
         ret.new_fn("handle")
             .set_async(true)
@@ -571,12 +569,12 @@ impl ServerStream {
         ret.new_fn("full")
             .set_async(true)
             .arg_ref_self()
-            .arg("request", format!("tonic::Request<{}>", &self.request))
+            .arg("request", format!("tonic::Request<{}>", self.request))
             .ret(format!("tonic::Result<{boxed_stream}>"))
             .line("use tonic::codegen::tokio_stream::StreamExt as _;")
             .line("let (metadata, extensions, message) = request.into_parts();")
             .line(
-                r#"tracing::Span::current().record("rpc.request.size", prost::Message::encoded_len(&message));"#,
+                r#"miden_node_tracing::Span::current().record("rpc.request.size", prost::Message::encoded_len(&message));"#,
             )
             .line("let input = Self::decode(message)?;")
             .line("let stream = self.handle(input, &metadata, &extensions).await?;")

@@ -14,14 +14,14 @@ use miden_node_proto::clients::{
 use miden_node_proto::server::{rpc_api, sequencer_api};
 use miden_node_proto_build::rpc_api_descriptor;
 use miden_node_store::state::{BlockWriter, ProofWriter, State};
+use miden_node_tracing::grpc::grpc_trace_fn;
+use miden_node_tracing::info;
+use miden_node_tracing::panic::{CatchPanicLayer, catch_panic_layer_fn};
 use miden_node_utils::clap::GrpcOptions;
 use miden_node_utils::cors::cors_for_grpc_web_layer;
 use miden_node_utils::grpc;
-use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
-use miden_node_utils::tracing::grpc::grpc_trace_fn;
-use miden_node_utils::tracing::info;
 use miden_protocol::block::BlockNumber;
 use rand::RngExt;
 use tokio::net::TcpListener;
@@ -443,6 +443,8 @@ fn log_node_synchronizing(mode: &str, endpoint: impl Display, readiness_threshol
 pub struct SequencerInternal {
     /// The listener the service binds to.
     pub listener: TcpListener,
+    /// The read-only store state used to validate transaction reference blocks.
+    pub state: Arc<State>,
     /// The in-process block producer API submissions are forwarded to.
     pub block_producer: BlockProducerApi,
     /// gRPC server options for internal services (timeouts).
@@ -465,7 +467,10 @@ impl SequencerInternal {
             internal.listen = endpoint.to_string()
         );
 
-        let service = SequencerInternalService { block_producer: self.block_producer };
+        let service = SequencerInternalService {
+            state: self.state,
+            block_producer: self.block_producer,
+        };
 
         // Note: deliberately no accept-header / auth layers; this is a private, trusted interface
         // and is expected to be network-isolated.

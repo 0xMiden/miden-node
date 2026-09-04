@@ -1,7 +1,7 @@
 use miden_node_block_producer::store::TransactionInputs;
 use miden_node_proto::generated as proto;
 use miden_node_proto::generated::server::sequencer_api;
-use miden_node_utils::ErrorReport;
+use miden_node_tracing::ErrorReport;
 use miden_protocol::batch::ProposedBatch;
 use miden_protocol::utils::serde::Deserializable;
 use tonic::Status;

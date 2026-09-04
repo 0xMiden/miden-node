@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use miden_node_proto::clients::ValidatorClient;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_tracing::miden_instrument;
 use url::Url;
 
 use crate::COMPONENT;

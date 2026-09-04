@@ -14,8 +14,8 @@
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
+use miden_node_tracing::Span;
 use miden_protocol::block::{BlockNumber, Blockchain};
-use tracing::Span;
 
 use crate::account_state_forest::{AccountStateForest, AccountStateForestBackendReader};
 use crate::db::Db;
@@ -34,10 +34,11 @@ pub(in crate::state) use snapshot::{
 };
 
 mod account;
-mod batch_inputs;
 mod block;
-mod block_inputs;
+mod inclusion_proofs;
 mod note;
+mod state_witnesses;
+pub use state_witnesses::StateWitnesses;
 mod sync;
 
 mod transaction_inputs;

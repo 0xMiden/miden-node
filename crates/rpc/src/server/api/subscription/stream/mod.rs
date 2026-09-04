@@ -6,7 +6,7 @@ use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
 use miden_node_store::DatabaseError;
-use miden_node_utils::tracing::error;
+use miden_node_tracing::error;
 use miden_protocol::block::BlockNumber;
 use tokio::sync::mpsc::error::SendTimeoutError;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};

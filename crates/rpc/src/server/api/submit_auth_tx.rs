@@ -1,10 +1,10 @@
-use miden_node_block_producer::AuthenticatedTransaction;
+use miden_node_block_producer::{AuthenticatedTransaction, ensure_transaction_has_fee};
 use miden_node_proto::generated as proto;
 use miden_node_proto::generated::server::sequencer_api;
-use miden_node_utils::ErrorReport;
+use miden_node_tracing::ErrorReport;
 use tonic::Status;
 
-use super::SequencerInternalService;
+use super::{SequencerInternalService, get_block_header_error_to_status};
 
 #[tonic::async_trait]
 impl sequencer_api::SubmitAuthenticatedTx for SequencerInternalService {
@@ -27,6 +27,26 @@ impl sequencer_api::SubmitAuthenticatedTx for SequencerInternalService {
         _metadata: &tonic::metadata::MetadataMap,
         _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
+        let (block_num, commitment) = tx.reference_block();
+        let reference_header = self
+            .state
+            .view()
+            .get_block_header(Some(block_num), false)
+            .await
+            .map_err(get_block_header_error_to_status)?
+            .0
+            .ok_or_else(|| Status::invalid_argument(format!("unknown block {block_num}")))?;
+
+        if reference_header.commitment() != commitment {
+            return Err(Status::invalid_argument(format!(
+                "reference block's commitment {commitment} at block {block_num} does not match the chain's commitment of {}",
+                reference_header.commitment(),
+            )));
+        }
+
+        ensure_transaction_has_fee(tx.raw_proven_transaction(), reference_header.fee_parameters())
+            .map_err(Status::from)?;
+
         self.block_producer
             .submit_authenticated_tx(tx)
             .await

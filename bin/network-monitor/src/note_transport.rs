@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_tracing::miden_instrument;
 use miden_note_transport_proto::miden_note_transport::StatsResponse;
 use miden_note_transport_proto::miden_note_transport::miden_note_transport_client::MidenNoteTransportClient;
 use tonic::transport::{Channel, ClientTlsConfig};
@@ -86,8 +86,7 @@ fn apply_stats(details: &mut NoteTransportStatusDetails, stats: &StatsResponse) 
     details.version = (!stats.version.is_empty()).then(|| stats.version.clone());
     details.total_notes = Some(stats.total_notes);
     details.total_tags = Some(stats.total_tags);
-    // Empty until the server implements per-tag stats; kept so the card lights up the moment it
-    // does.
+    // An empty per-tag list leaves `last_activity` unset. The card then renders `-`.
     details.last_activity = stats
         .notes_per_tag
         .iter()

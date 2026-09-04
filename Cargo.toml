@@ -4,6 +4,7 @@ members = [
   "bin/large-account-benchmark",
   "bin/network-monitor",
   "bin/node",
+  "bin/note-transport",
   "bin/ntx-builder",
   "bin/remote-prover",
   "bin/stress-test",
@@ -15,6 +16,7 @@ members = [
   "crates/rpc",
   "crates/store",
   "crates/test-macro",
+  "crates/tracing",
   "crates/tracing-macro",
   "crates/utils",
   "proto",
@@ -31,8 +33,8 @@ homepage     = "https://miden.xyz"
 license      = "MIT"
 readme       = "README.md"
 repository   = "https://github.com/0xMiden/node"
-rust-version = "1.96.1"
-version      = "0.16.0-rc.3"
+rust-version = "1.98.0"
+version      = "0.16.0-rc.5"
 
 # Optimize the cryptography for faster tests involving account creation.
 [profile.test.package.miden-crypto]
@@ -43,24 +45,25 @@ debug = true
 
 [workspace.dependencies]
 # Workspace crates.
-miden-node-block-producer   = { path = "crates/block-producer", version = "0.16.0-rc.3" }
-miden-node-db               = { path = "crates/db", version = "0.16.0-rc.3" }
-miden-node-grpc-error-macro = { path = "crates/grpc-error-macro", version = "0.16.0-rc.3" }
-miden-node-proto            = { path = "crates/proto", version = "0.16.0-rc.3" }
-miden-node-proto-build      = { path = "proto", version = "0.16.0-rc.3" }
-miden-node-rpc              = { path = "crates/rpc", version = "0.16.0-rc.3" }
-miden-node-store            = { path = "crates/store", version = "0.16.0-rc.3" }
+miden-node-block-producer   = { path = "crates/block-producer", version = "0.16.0-rc.5" }
+miden-node-db               = { path = "crates/db", version = "0.16.0-rc.5" }
+miden-node-grpc-error-macro = { path = "crates/grpc-error-macro", version = "0.16.0-rc.5" }
+miden-node-proto            = { path = "crates/proto", version = "0.16.0-rc.5" }
+miden-node-proto-build      = { path = "proto", version = "0.16.0-rc.5" }
+miden-node-rpc              = { path = "crates/rpc", version = "0.16.0-rc.5" }
+miden-node-store            = { path = "crates/store", version = "0.16.0-rc.5" }
 miden-node-test-macro       = { path = "crates/test-macro" }
-miden-node-tracing-macro    = { path = "crates/tracing-macro", version = "0.16.0-rc.3" }
-miden-node-utils            = { path = "crates/utils", version = "0.16.0-rc.3" }
+miden-node-tracing          = { path = "crates/tracing", version = "0.16.0-rc.5" }
+miden-node-tracing-macro    = { path = "crates/tracing-macro", version = "0.16.0-rc.5" }
+miden-node-utils            = { path = "crates/utils", version = "0.16.0-rc.5" }
 
 # miden-protocol dependencies. These should be updated in sync.
-miden-block-prover = { version = "=0.16.0-rc.4" }
-miden-protocol     = { default-features = false, version = "=0.16.0-rc.4" }
-miden-standards    = { version = "=0.16.0-rc.4" }
-miden-testing      = { version = "=0.16.0-rc.4" }
-miden-tx           = { default-features = false, version = "=0.16.0-rc.4" }
-miden-tx-batch     = { version = "=0.16.0-rc.4" }
+miden-block-prover = { version = "=0.16.0-rc.9" }
+miden-protocol     = { default-features = false, version = "=0.16.0-rc.9" }
+miden-standards    = { version = "=0.16.0-rc.9" }
+miden-testing      = { version = "=0.16.0-rc.9" }
+miden-tx           = { default-features = false, version = "=0.16.0-rc.9" }
+miden-tx-batch     = { version = "=0.16.0-rc.9" }
 
 # Other miden dependencies. These should align with those expected by miden-protocol.
 miden-crypto               = { version = "0.29.1" }
@@ -92,7 +95,7 @@ humantime          = { version = "2.2" }
 indexmap           = { version = "2.12" }
 itertools          = { version = "0.14" }
 libsqlite3-sys     = { features = ["bundled"], version = "0.35" }
-lru                = { default-features = false, version = "0.16" }
+lru                = { default-features = false, version = "0.18" }
 miette             = { version = "7.6" }
 opentelemetry      = { version = "0.31" }
 pretty_assertions  = { version = "1.4" }
@@ -132,6 +135,7 @@ tonic-reflection   = { version = "0.14" }
 tonic-web          = { version = "0.14" }
 tower              = { version = "0.5" }
 tower-http         = { features = ["cors", "trace"], version = "0.6" }
+tower_governor     = { version = "0.8" }
 tracing            = { version = "0.1" }
 tracing-subscriber = { features = ["env-filter", "fmt", "json"], version = "0.3" }
 trybuild           = { version = "1.0" }
@@ -148,18 +152,17 @@ ignored = ["libsqlite3-sys", "tonic-prost"]
 # Pedantic lints are set to a lower priority which allows lints in the group to be selectively enabled.
 pedantic = { level = "warn", priority = -1 }
 
-allow_attributes             = "deny"
-cast_possible_truncation     = "allow" # Overly many instances especially regarding indices.
-collapsible-if               = "allow" # Too new to enforce.
-from_iter_instead_of_collect = "allow" # at times `FromIter` is much more readable
-ignored_unit_patterns        = "allow" # Stylistic choice.
-large_types_passed_by_value  = "allow" # Triggered by BlockHeader being Copy + 334 bytes.
-missing_errors_doc           = "allow" # TODO: fixup and enable this.
-missing_panics_doc           = "allow" # TODO: fixup and enable this.
-module_name_repetitions      = "allow" # Many triggers, and is a stylistic choice.
-must_use_candidate           = "allow" # This marks many fn's which isn't helpful.
-needless_for_each            = "allow" # Context dependent if that's useful.
-should_panic_without_expect  = "allow" # We don't care about the specific panic message.
+allow_attributes            = "deny"
+cast_possible_truncation    = "allow" # Overly many instances especially regarding indices.
+collapsible-if              = "allow" # Too new to enforce.
+ignored_unit_patterns       = "allow" # Stylistic choice.
+large_types_passed_by_value = "allow" # Triggered by BlockHeader being Copy + 334 bytes.
+missing_errors_doc          = "allow" # TODO: fixup and enable this.
+missing_panics_doc          = "allow" # TODO: fixup and enable this.
+module_name_repetitions     = "allow" # Many triggers, and is a stylistic choice.
+must_use_candidate          = "allow" # This marks many fn's which isn't helpful.
+needless_for_each           = "allow" # Context dependent if that's useful.
+should_panic_without_expect = "allow" # We don't care about the specific panic message.
 # End of pedantic lints.
 
 # Configure `cargo-typos`

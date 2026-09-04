@@ -67,6 +67,10 @@ pub struct Scheduler {
     /// Number of blocks after which a submitted transaction expires. An in-flight entry older than
     /// this is dropped, which releases the account for a new attempt.
     tx_expiration_delta: NonZeroU16,
+
+    /// Accounts served before every other account. Each one still holds at most one slot, because
+    /// an account with a running attempt is excluded from selection.
+    priority_accounts: Vec<AccountId>,
 }
 
 impl Scheduler {
@@ -74,6 +78,7 @@ impl Scheduler {
         ctx: AttemptContext,
         max_concurrent_txs: usize,
         tx_expiration_delta: NonZeroU16,
+        priority_accounts: Vec<AccountId>,
     ) -> Self {
         Self {
             ctx,
@@ -82,6 +87,7 @@ impl Scheduler {
             in_flight: HashMap::new(),
             max_concurrent_txs,
             tx_expiration_delta,
+            priority_accounts,
         }
     }
 
@@ -112,9 +118,16 @@ impl Scheduler {
         let ready = self
             .ctx
             .db
-            .ready_accounts(self.ctx.config.max_note_attempts, block_num, busy, free)
+            .ready_accounts(
+                self.ctx.config.max_note_attempts,
+                block_num,
+                busy,
+                self.priority_accounts.clone(),
+                free,
+            )
             .await
             .context("failed to query accounts ready for a transaction attempt")?;
+        let dispatched = ready.len();
         for account_id in ready {
             let ctx = self.ctx.clone();
             let chain = chain.clone();
@@ -127,6 +140,18 @@ impl Scheduler {
                 reference_block.number = block_num
             );
         }
+
+        // Neither the attempt concurrency nor the submitted-but-uncommitted backlog is otherwise
+        // observable from outside the process.
+        debug!(
+            target: LOG_TARGET,
+            "network transaction pipeline",
+            reference_block.number = block_num,
+            attempt.dispatched.count = dispatched,
+            attempt.running.count = self.running.len(),
+            transaction.in_flight.count = self.in_flight.len(),
+            attempt.slots.count = self.max_concurrent_txs
+        );
 
         Ok(())
     }
@@ -318,7 +343,7 @@ mod tests {
     async fn test_scheduler() -> (Scheduler, NtxDbWriter, tempfile::TempDir) {
         let (db, dir) = crate::db::test_setup().await;
         let ctx = AttemptContext::test(&db.reader());
-        (Scheduler::new(ctx, 4, NonZeroU16::new(30).unwrap()), db, dir)
+        (Scheduler::new(ctx, 4, NonZeroU16::new(30).unwrap(), Vec::new()), db, dir)
     }
 
     /// Effects for a block carrying nothing but its header.
@@ -433,6 +458,7 @@ mod tests {
                 30,
                 BlockNumber::from(1),
                 vec![in_flight_account],
+                Vec::new(),
                 scheduler.max_concurrent_txs,
             )
             .await
@@ -453,7 +479,10 @@ mod tests {
             .unwrap();
 
         assert!(
-            db.ready_accounts(30, BlockNumber::from(1), vec![], 4).await.unwrap().is_empty(),
+            db.ready_accounts(30, BlockNumber::from(1), vec![], vec![], 4)
+                .await
+                .unwrap()
+                .is_empty(),
             "a note targeting an account with no committed state is not dispatchable",
         );
 
@@ -466,7 +495,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            db.ready_accounts(30, BlockNumber::from(1), vec![], 4).await.unwrap(),
+            db.ready_accounts(30, BlockNumber::from(1), vec![], vec![], 4).await.unwrap(),
             vec![account_id],
             "the account becomes dispatchable once its state is committed",
         );

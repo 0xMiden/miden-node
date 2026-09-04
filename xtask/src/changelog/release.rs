@@ -3,17 +3,20 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail, ensure};
 use semver::Version;
+use serde::Deserialize;
 
 use super::pr::{self, ChangelogDocument};
-use super::{InvalidChangelogEntry, InvalidChangelogSource, ReleaseNoteEntry};
+use super::{InvalidChangelogEntry, InvalidChangelogSource, ProtocolUpdate, ReleaseNoteEntry};
 
 pub(super) struct ChangelogEntries {
+    pub(super) protocol_update: Option<ProtocolUpdate>,
     pub(super) entries: Vec<ReleaseNoteEntry>,
     pub(super) invalid_entries: Vec<InvalidChangelogEntry>,
 }
 
 pub(super) struct CurrentChangelog {
     pub(super) title: String,
+    pub(super) protocol_update: Option<ProtocolUpdate>,
     pub(super) entries: Vec<ReleaseNoteEntry>,
     pub(super) invalid_entries: Vec<InvalidChangelogEntry>,
 }
@@ -33,7 +36,9 @@ pub(super) fn release_changelog_entries(release_tag: &str) -> Result<ChangelogEn
     );
 
     let previous_release_tag = previous_release_tag(&release, release_commit)?;
-    let commits = commits_since_tag(&previous_release_tag, &format!("refs/tags/{release_tag}"))?;
+    let previous_release_ref = format!("refs/tags/{previous_release_tag}");
+    let release_ref = format!("refs/tags/{release_tag}");
+    let commits = commits_since_tag(&previous_release_tag, &release_ref)?;
     ensure!(
         !commits.is_empty(),
         "release range refs/tags/{previous_release_tag}..refs/tags/{release_tag} contains no commits"
@@ -42,6 +47,7 @@ pub(super) fn release_changelog_entries(release_tag: &str) -> Result<ChangelogEn
     let pull_requests = pull_requests_for_commits(&repo, &commits)?;
     let mut changelog = changelog_entries_for_pull_requests(&repo, &pull_requests.pull_requests);
     changelog.invalid_entries.extend(pull_requests.invalid_entries);
+    changelog.protocol_update = protocol_update(&previous_release_ref, &release_ref)?;
 
     Ok(changelog)
 }
@@ -59,6 +65,7 @@ pub(super) fn current_changelog_entries() -> Result<CurrentChangelog> {
     if commits.is_empty() {
         return Ok(CurrentChangelog {
             title: format!("Changes since {previous_stable_tag}"),
+            protocol_update: None,
             entries: Vec::new(),
             invalid_entries: Vec::new(),
         });
@@ -71,6 +78,7 @@ pub(super) fn current_changelog_entries() -> Result<CurrentChangelog> {
 
     Ok(CurrentChangelog {
         title: format!("Changes since {previous_stable_tag}"),
+        protocol_update: protocol_update(&format!("refs/tags/{previous_stable_tag}"), "HEAD")?,
         entries: changelog.entries,
         invalid_entries: changelog.invalid_entries,
     })
@@ -174,6 +182,59 @@ fn commits_since_tag(previous_stable_tag: &str, end_ref: &str) -> Result<Vec<Str
         .filter(|commit| !commit.is_empty())
         .map(str::to_owned)
         .collect())
+}
+
+fn protocol_update(previous_ref: &str, current_ref: &str) -> Result<Option<ProtocolUpdate>> {
+    let previous_lockfile = lockfile_at(previous_ref)?;
+    let current_lockfile = lockfile_at(current_ref)?;
+
+    protocol_update_from_lockfiles(&previous_lockfile, &current_lockfile)
+}
+
+fn lockfile_at(git_ref: &str) -> Result<String> {
+    let object = format!("{git_ref}:Cargo.lock");
+    git_output(&["show", &object]).with_context(|| format!("reading Cargo.lock at {git_ref}"))
+}
+
+fn protocol_update_from_lockfiles(
+    previous_lockfile: &str,
+    current_lockfile: &str,
+) -> Result<Option<ProtocolUpdate>> {
+    let previous = protocol_version_from_lockfile(previous_lockfile)
+        .context("reading the previous miden-protocol version")?;
+    let current = protocol_version_from_lockfile(current_lockfile)
+        .context("reading the current miden-protocol version")?;
+
+    Ok((previous != current).then_some(ProtocolUpdate { previous, current }))
+}
+
+fn protocol_version_from_lockfile(source: &str) -> Result<Version> {
+    #[derive(Deserialize)]
+    struct Lockfile {
+        package: Vec<Package>,
+    }
+
+    #[derive(Deserialize)]
+    struct Package {
+        name: String,
+        version: String,
+    }
+
+    let lockfile = toml::from_str::<Lockfile>(source).context("parsing Cargo.lock as TOML")?;
+    let versions = lockfile
+        .package
+        .into_iter()
+        .filter(|package| package.name == "miden-protocol")
+        .map(|package| package.version)
+        .collect::<Vec<_>>();
+
+    ensure!(
+        versions.len() == 1,
+        "expected one miden-protocol package in Cargo.lock, found {}",
+        versions.len()
+    );
+
+    Version::parse(&versions[0]).context("parsing the miden-protocol version")
 }
 
 fn github_repo() -> Result<String> {
@@ -337,7 +398,11 @@ where
         }
     }
 
-    ChangelogEntries { entries, invalid_entries }
+    ChangelogEntries {
+        protocol_update: None,
+        entries,
+        invalid_entries,
+    }
 }
 
 fn pull_request_body(repo: &str, pull_request: u64) -> Result<String> {
@@ -408,6 +473,7 @@ mod tests {
         ReleaseTag,
         changelog_entries_for_pull_requests_with,
         previous_release_tag_from,
+        protocol_update_from_lockfiles,
         pull_requests_for_commits_with,
     };
     use crate::changelog::render;
@@ -428,7 +494,7 @@ mod tests {
             })
             .unwrap();
 
-        let notes = render::release_notes("Release v1.2.3", &[], &changelog.invalid_entries);
+        let notes = render::release_notes("Release v1.2.3", None, &[], &changelog.invalid_entries);
 
         assert_eq!(
             notes,
@@ -496,8 +562,12 @@ No release-note-worthy changes.
             |_repo, _pull_request| Err(anyhow!("pull request not found")),
         );
 
-        let notes =
-            render::release_notes("Release v1.2.3", &changelog.entries, &changelog.invalid_entries);
+        let notes = render::release_notes(
+            "Release v1.2.3",
+            None,
+            &changelog.entries,
+            &changelog.invalid_entries,
+        );
 
         assert_eq!(
             notes,
@@ -530,8 +600,12 @@ No release-note-worthy changes.
             },
         );
 
-        let notes =
-            render::release_notes("Release v1.2.3", &changelog.entries, &changelog.invalid_entries);
+        let notes = render::release_notes(
+            "Release v1.2.3",
+            None,
+            &changelog.entries,
+            &changelog.invalid_entries,
+        );
 
         assert!(notes.contains("- Broken PR #42: missing `## Changelog` section"));
         assert!(notes.contains("- Broken PR #43: parsing changelog TOML block:"));
@@ -567,6 +641,36 @@ No release-note-worthy changes.
         let tags = release_tags(&["v1.1.0", "v1.2.0-rc.0", "v1.2.0-rc.1", "v1.2.0"]);
 
         assert_eq!(previous_release_tag_from(&release, &tags), Some("v1.1.0"));
+    }
+
+    #[test]
+    fn protocol_update_uses_the_versions_at_the_range_endpoints() {
+        let previous = lockfile("0.16.0-rc.4");
+        let current = lockfile("0.16.0-rc.9");
+
+        let update = protocol_update_from_lockfiles(&previous, &current).unwrap().unwrap();
+
+        assert_eq!(update.previous, semver::Version::parse("0.16.0-rc.4").unwrap());
+        assert_eq!(update.current, semver::Version::parse("0.16.0-rc.9").unwrap());
+    }
+
+    #[test]
+    fn unchanged_protocol_version_does_not_create_an_update() {
+        let previous = lockfile("0.16.0-rc.9");
+        let current = lockfile("0.16.0-rc.9");
+
+        assert!(protocol_update_from_lockfiles(&previous, &current).unwrap().is_none());
+    }
+
+    fn lockfile(protocol_version: &str) -> String {
+        format!(
+            r#"version = 4
+
+[[package]]
+name = "miden-protocol"
+version = "{protocol_version}"
+"#
+        )
     }
 
     fn release_tags(tags: &[&str]) -> Vec<(String, semver::Version)> {

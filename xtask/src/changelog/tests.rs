@@ -249,6 +249,21 @@ description = "Improved RPC behavior."
 }
 
 #[test]
+fn rejects_protocol_scope() {
+    let body = valid_body(
+        r#"[[entry]]
+scope       = "protocol"
+impact      = "changed"
+description = "Bumped the protocol version."
+"#,
+    );
+
+    let err = verify_pr_body(&body).unwrap_err();
+
+    assert!(err.to_string().contains("unknown variant `protocol`"));
+}
+
+#[test]
 fn rejects_unknown_fields() {
     let body = valid_body(
         r#"[[entry]]

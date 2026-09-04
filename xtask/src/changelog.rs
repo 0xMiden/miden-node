@@ -5,6 +5,7 @@ mod render;
 mod tests;
 
 use anyhow::Result;
+use semver::Version;
 use serde::Deserialize;
 
 pub fn verify_pr_body(source: &str) -> Result<()> {
@@ -15,6 +16,7 @@ pub fn render_release_notes(release_tag: &str) -> Result<String> {
     let changelog = release::release_changelog_entries(release_tag)?;
     Ok(render::release_notes(
         &format!("Release {release_tag}"),
+        changelog.protocol_update.as_ref(),
         &changelog.entries,
         &changelog.invalid_entries,
     ))
@@ -24,6 +26,7 @@ pub fn render_current_changelog() -> Result<String> {
     let changelog = release::current_changelog_entries()?;
     Ok(render::release_notes(
         &changelog.title,
+        changelog.protocol_update.as_ref(),
         &changelog.entries,
         &changelog.invalid_entries,
     ))
@@ -33,7 +36,6 @@ pub fn render_current_changelog() -> Result<String> {
 #[serde(rename_all = "kebab-case")]
 enum Scope {
     Rpc,
-    Protocol,
     Docs,
     Node,
     NoteTransport,
@@ -43,6 +45,12 @@ enum Scope {
     Validator,
     Internal,
     General,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ProtocolUpdate {
+    previous: Version,
+    current: Version,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]

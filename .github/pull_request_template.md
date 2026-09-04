@@ -24,7 +24,7 @@ changelog = "none"
 reason    = "Internal change only."
 ```
 
-Allowed scopes: rpc, protocol, docs, node, note-transport, network-monitor, ntx-builder, prover, validator, internal, general
+Allowed scopes: rpc, docs, node, note-transport, network-monitor, ntx-builder, prover, validator, internal, general
 Allowed impacts: breaking, migration, added, changed, fixed, removed, deprecated
 -->
 

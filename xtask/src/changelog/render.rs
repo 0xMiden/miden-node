@@ -1,18 +1,32 @@
 use std::fmt::Write as _;
 
-use super::{Impact, InvalidChangelogEntry, InvalidChangelogSource, ReleaseNoteEntry, Scope};
+use super::{
+    Impact,
+    InvalidChangelogEntry,
+    InvalidChangelogSource,
+    ProtocolUpdate,
+    ReleaseNoteEntry,
+    Scope,
+};
 
 pub(super) fn release_notes(
     title: &str,
+    protocol_update: Option<&ProtocolUpdate>,
     entries: &[ReleaseNoteEntry],
     invalid_entries: &[InvalidChangelogEntry],
 ) -> String {
     let mut notes = format!("{title}\n");
 
+    if let Some(update) = protocol_update {
+        append_protocol_update(&mut notes, update);
+    }
+
     append_invalid_entries(&mut notes, invalid_entries);
 
     if entries.is_empty() {
-        notes.push_str("\nNo release-note-worthy changes.\n");
+        if protocol_update.is_none() {
+            notes.push_str("\nNo release-note-worthy changes.\n");
+        }
         return notes;
     }
 
@@ -22,22 +36,34 @@ pub(super) fn release_notes(
     notes.push_str("\n## Changes by Scope\n");
 
     for scope in SCOPE_ORDER {
-        let mut entries = entries.iter().filter(|entry| entry.scope == scope).collect::<Vec<_>>();
-
-        if entries.is_empty() {
-            continue;
-        }
-
-        entries.sort_by_key(|entry| (entry.impact.sort_key(), entry.order));
-
-        writeln!(notes, "\n### {scope}\n").expect("writing to String cannot fail");
-
-        for entry in entries {
-            append_scope_entry(&mut notes, entry);
-        }
+        append_scope_section(&mut notes, scope, entries);
     }
 
     notes
+}
+
+fn append_scope_section(notes: &mut String, scope: Scope, entries: &[ReleaseNoteEntry]) {
+    let mut entries = entries.iter().filter(|entry| entry.scope == scope).collect::<Vec<_>>();
+
+    if entries.is_empty() {
+        return;
+    }
+
+    entries.sort_by_key(|entry| (entry.impact.sort_key(), entry.order));
+
+    writeln!(notes, "\n### {scope}\n").expect("writing to String cannot fail");
+
+    for entry in entries {
+        append_scope_entry(notes, entry);
+    }
+}
+
+fn append_protocol_update(notes: &mut String, update: &ProtocolUpdate) {
+    let previous = &update.previous;
+    let current = &update.current;
+
+    writeln!(notes, "\nProtocol support updated from `{previous}` to `{current}`.")
+        .expect("writing to String cannot fail");
 }
 
 fn append_invalid_entries(notes: &mut String, invalid_entries: &[InvalidChangelogEntry]) {
@@ -108,10 +134,9 @@ fn append_callout_entry(notes: &mut String, entry: &ReleaseNoteEntry) {
 }
 
 impl Scope {
-    const fn sort_order() -> [Self; 11] {
+    const fn sort_order() -> [Self; 10] {
         [
             Self::General,
-            Self::Protocol,
             Self::Rpc,
             Self::Node,
             Self::Prover,
@@ -129,7 +154,6 @@ impl std::fmt::Display for Scope {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let label = match self {
             Self::General => "General",
-            Self::Protocol => "Protocol",
             Self::Rpc => "RPC",
             Self::Node => "Node",
             Self::Prover => "Prover",
@@ -175,7 +199,7 @@ impl std::fmt::Display for Impact {
     }
 }
 
-const SCOPE_ORDER: [Scope; 11] = Scope::sort_order();
+const SCOPE_ORDER: [Scope; 10] = Scope::sort_order();
 
 #[cfg(test)]
 mod tests {
@@ -198,7 +222,7 @@ mod tests {
             },
             ReleaseNoteEntry {
                 pr_number: 11,
-                scope: Scope::Protocol,
+                scope: Scope::Validator,
                 impact: Impact::Migration,
                 description: "Added database migration.".to_owned(),
                 order: 1,
@@ -218,12 +242,19 @@ mod tests {
                 order: 3,
             },
         ];
+        let protocol_update = ProtocolUpdate {
+            previous: semver::Version::parse("0.16.0-rc.4").unwrap(),
+            current: semver::Version::parse("0.16.0-rc.9").unwrap(),
+        };
 
-        let notes = release_notes("Release v0.16.0", &entries, &invalid_entries);
+        let notes =
+            release_notes("Release v0.16.0", Some(&protocol_update), &entries, &invalid_entries);
 
         assert_eq!(
             notes,
             r"Release v0.16.0
+
+Protocol support updated from `0.16.0-rc.4` to `0.16.0-rc.9`.
 
 ## Changelog Entries Requiring Attention
 
@@ -235,17 +266,13 @@ mod tests {
 
 ## Migrations
 
-- **Protocol:** Added database migration. (#11)
+- **Validator:** Added database migration. (#11)
 
 ## Changes by Scope
 
 ### General
 
 - **Fixed:** Fixed release metadata. (#13)
-
-### Protocol
-
-- **Migration:** Added database migration. (#11)
 
 ### RPC
 
@@ -254,6 +281,28 @@ mod tests {
 ### Node
 
 - **Added:** Added startup command. (#12)
+
+### Validator
+
+- **Migration:** Added database migration. (#11)
+"
+        );
+    }
+
+    #[test]
+    fn renders_a_protocol_update_without_pr_entries() {
+        let protocol_update = ProtocolUpdate {
+            previous: semver::Version::parse("0.16.0-rc.4").unwrap(),
+            current: semver::Version::parse("0.16.0-rc.9").unwrap(),
+        };
+
+        let notes = release_notes("Release v0.16.0", Some(&protocol_update), &[], &[]);
+
+        assert_eq!(
+            notes,
+            r"Release v0.16.0
+
+Protocol support updated from `0.16.0-rc.4` to `0.16.0-rc.9`.
 "
         );
     }

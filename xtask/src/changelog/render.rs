@@ -97,14 +97,14 @@ fn append_rust_msrv_update(notes: &mut String, update: &RustMsrvUpdate) {
 fn append_database_migration_updates(notes: &mut String, updates: &[DatabaseMigrationUpdate]) {
     for update in updates {
         let database = update.database;
-        let previous = update.previous;
-        let current = update.current;
+        let service = match database {
+            Database::Store => "miden-node",
+            Database::Validator => "miden-validator",
+            Database::NtxBuilder => "miden-ntx-builder",
+        };
 
-        writeln!(
-            notes,
-            "{database} database schema migrated from `{previous:03}` to `{current:03}`."
-        )
-        .expect("writing to String cannot fail");
+        writeln!(notes, "{database} migration required. Run `{service} migrate`.")
+            .expect("writing to String cannot fail");
     }
 }
 
@@ -214,7 +214,7 @@ impl std::fmt::Display for Scope {
 impl std::fmt::Display for Database {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let label = match self {
-            Self::Store => "Store",
+            Self::Store => "Node",
             Self::Validator => "Validator",
             Self::NtxBuilder => "NTX Builder",
         };
@@ -323,8 +323,8 @@ mod tests {
 
 Protocol support updated from `0.16.0-rc.4` to `0.16.0-rc.9`.
 Rust MSRV updated from `1.96.1` to `1.98.0`.
-Store database schema migrated from `003` to `005`.
-NTX Builder database schema migrated from `001` to `003`.
+Node migration required. Run `miden-node migrate`.
+NTX Builder migration required. Run `miden-ntx-builder migrate`.
 
 ## Changelog Entries Requiring Attention
 
@@ -389,11 +389,23 @@ Rust MSRV updated from `1.96.1` to `1.98.0`.
 
     #[test]
     fn renders_database_migration_updates_without_pr_entries() {
-        let updates = vec![DatabaseMigrationUpdate {
-            database: Database::Store,
-            previous: 3,
-            current: 5,
-        }];
+        let updates = vec![
+            DatabaseMigrationUpdate {
+                database: Database::Store,
+                previous: 3,
+                current: 5,
+            },
+            DatabaseMigrationUpdate {
+                database: Database::Validator,
+                previous: 1,
+                current: 2,
+            },
+            DatabaseMigrationUpdate {
+                database: Database::NtxBuilder,
+                previous: 1,
+                current: 3,
+            },
+        ];
 
         let notes = release_notes("Release v0.16.0", None, None, &updates, &[], &[]);
 
@@ -401,7 +413,9 @@ Rust MSRV updated from `1.96.1` to `1.98.0`.
             notes,
             r"Release v0.16.0
 
-Store database schema migrated from `003` to `005`.
+Node migration required. Run `miden-node migrate`.
+Validator migration required. Run `miden-validator migrate`.
+NTX Builder migration required. Run `miden-ntx-builder migrate`.
 "
         );
     }

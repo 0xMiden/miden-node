@@ -47,7 +47,7 @@ env:
   REGISTRY: ghcr.io
   REGISTRY_PREFIX: ghcr.io/0xmiden
   DOCKER_PLATFORMS: linux/amd64,linux/arm64
-  MIDEN_FAUCET_IMAGE: ghcr.io/0xmiden/miden-faucet:v0.16.0-rc.1
+  MIDEN_FAUCET_IMAGE: ghcr.io/0xmiden/miden-faucet:v0.16.0-rc.3
 
 jobs:
   preflight:

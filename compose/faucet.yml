@@ -4,10 +4,10 @@
 services:
   faucet:
     profiles: [faucet]
-    image: ${MIDEN_FAUCET_IMAGE:-miden-faucet:0.16.0-alpha.1}
+    image: ${MIDEN_FAUCET_IMAGE:-ghcr.io/0xmiden/miden-faucet:v0.16.0-rc.3}
     pull_policy: missing
     build:
-      context: https://github.com/0xMiden/faucet.git#48d3af2c58ffe16a585314208c8ed93fc3dfea35
+      context: https://github.com/0xMiden/faucet.git#b9800b4fb0571d1f2469ac58e40c529e23880188
     volumes:
       - faucet-data:/faucet
       - node-data:/data:ro

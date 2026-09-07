@@ -23,6 +23,8 @@ use tonic::Request;
 use url::Url;
 
 use crate::COMPONENT;
+use crate::deploy::UnsupportedChainError;
+use crate::funding::FaucetClient;
 use crate::service::{Service, build_tls_client};
 use crate::service_status::{
     ProverTestOutcome,
@@ -89,6 +91,8 @@ pub struct ProbeSnapshot {
 struct ProbeSpawner {
     client: RemoteProverClient,
     rpc_url: Url,
+    /// Faucet access for funding the probe payload's fee payment on fee-charging chains.
+    funding: Option<FaucetClient>,
     interval: Duration,
     probe_tx: watch::Sender<ProbeSnapshot>,
     name: String,
@@ -100,6 +104,7 @@ impl ProbeSpawner {
         tokio::spawn(run_prover_test(
             self.client.clone(),
             self.rpc_url.clone(),
+            self.funding.clone(),
             self.interval,
             self.probe_tx.clone(),
             self.name.clone(),
@@ -126,10 +131,12 @@ pub struct ProverStatusService {
 }
 
 impl ProverStatusService {
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         name: String,
         prover_url: Url,
         rpc_url: Url,
+        funding: Option<FaucetClient>,
         interval: Duration,
         request_timeout: Duration,
         probe_interval: Duration,
@@ -141,6 +148,7 @@ impl ProverStatusService {
         let probe_spawner = ProbeSpawner {
             client: test_client,
             rpc_url,
+            funding,
             interval: probe_interval,
             probe_tx,
             name: name.clone(),
@@ -354,7 +362,8 @@ const PAYLOAD_RETRY_DELAY: Duration = Duration::from_secs(30);
 /// The probe payload is acquired from the RPC first, retrying until it succeeds, so an RPC that
 /// is unreachable at spawn time delays probing instead of permanently disarming it. Acquisition
 /// failures are published as [`Status::Unknown`] outcomes: they are an RPC problem, not a prover
-/// failure.
+/// failure. The exception is an [`UnsupportedChainError`] (fee-charging chain, no faucet): that
+/// is permanent, so it is published as [`Status::Unhealthy`] to demand operator action.
 #[miden_instrument(
     parent = None,
     target = COMPONENT,
@@ -367,6 +376,7 @@ const PAYLOAD_RETRY_DELAY: Duration = Duration::from_secs(30);
 async fn run_prover_test(
     mut client: RemoteProverClient,
     rpc_url: Url,
+    funding: Option<FaucetClient>,
     interval: Duration,
     probe_tx: watch::Sender<ProbeSnapshot>,
     name: String,
@@ -380,7 +390,7 @@ async fn run_prover_test(
             );
             return;
         }
-        match generate_prover_test_payload(&rpc_url).await {
+        match generate_prover_test_payload(&rpc_url, funding.as_ref()).await {
             Ok(payload) => break payload,
             Err(e) => {
                 warn!(
@@ -389,6 +399,11 @@ async fn run_prover_test(
                     "failed to build remote-prover probe payload; retrying",
                     prover = name
                 );
+                let status = if e.downcast_ref::<UnsupportedChainError>().is_some() {
+                    Status::Unhealthy
+                } else {
+                    Status::Unknown
+                };
                 probe_tx.send_modify(|snapshot| {
                     snapshot.latest = Some(ProverTestOutcome {
                         details: ProverTestDetails {
@@ -398,7 +413,7 @@ async fn run_prover_test(
                             failure_count: snapshot.failure_count,
                             proof_type: ProofType::Transaction,
                         },
-                        status: Status::Unknown,
+                        status,
                         error: Some(format!("building probe payload failed: {e:#}")),
                     });
                 });
@@ -497,7 +512,8 @@ fn tonic_status_to_json(status: &tonic::Status) -> String {
 /// The payload is a real, self-consistent counter genesis transaction built in-memory (see
 /// [`crate::deploy::build_probe_transaction_inputs`]); the remote prover re-executes and proves it.
 /// This requires a single RPC read for the genesis block header and is independent of the network
-/// transaction service.
+/// transaction service. On a fee-charging chain it also claims one faucet note for the fee; the
+/// payload is reused for every probe, so this is a one-time cost.
 #[miden_instrument(
     parent = None,
     target = COMPONENT,
@@ -508,8 +524,9 @@ fn tonic_status_to_json(status: &tonic::Status) -> String {
 )]
 async fn generate_prover_test_payload(
     rpc_url: &Url,
+    funding: Option<&FaucetClient>,
 ) -> anyhow::Result<proto::remote_prover::ProofRequest> {
-    let tx_inputs = crate::deploy::build_probe_transaction_inputs(rpc_url).await?;
+    let tx_inputs = crate::deploy::build_probe_transaction_inputs(rpc_url, funding).await?;
     Ok(proto::remote_prover::ProofRequest {
         proof_type: proto::remote_prover::ProofType::Transaction.into(),
         payload: tx_inputs.to_bytes(),

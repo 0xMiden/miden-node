@@ -10,7 +10,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use backon::{ExponentialBuilder, Retryable};
 use miden_node_proto::clients::{Builder, RpcClient};
-use miden_node_proto::domain::account::AccountResponse;
+use miden_node_proto::domain::account::{AccountResponse, AccountVaultDetails, StorageMapEntries};
 use miden_node_proto::domain::encryption::{
     TransactionInputsSealer,
     TrustedTransactionEncryptionState,
@@ -29,11 +29,16 @@ use miden_node_utils::retry;
 use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
+    AccountCode,
     AccountId,
+    AccountStorage,
     PartialAccount,
+    StorageMap,
     StorageMapKey,
     StorageMapWitness,
+    StorageSlot,
     StorageSlotContent,
+    StorageSlotType,
 };
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
@@ -41,17 +46,18 @@ use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey as ValidatorPublicKey;
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrDelta, MmrPeaks, PartialMmr};
-use miden_protocol::note::{NoteScript, NoteScriptRoot};
+use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{
     AccountInputs,
     ExecutedTransaction,
+    InputNote,
     InputNotes,
     PartialBlockchain,
     ProvenTransaction,
     TransactionArgs,
     TransactionInputs,
 };
-use miden_protocol::utils::serde::Serializable;
+use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::vm::FutureMaybeSend;
 use miden_tx::auth::BasicAuthenticator;
 use miden_tx::{
@@ -68,6 +74,7 @@ use url::Url;
 
 use crate::deploy::counter::create_counter_account;
 use crate::deploy::wallet::create_wallet_account;
+use crate::funding::{FaucetClient, FeeFunder, counter_funding_amount, wallet_funding_amount};
 use crate::{COMPONENT, LOG_TARGET};
 
 pub mod counter;
@@ -79,6 +86,9 @@ pub struct DeployedMonitorAccounts {
     pub secret_key: SecretKey,
     pub counter: Account,
     pub counter_anchor: CounterAnchor,
+    /// Faucet note funding the wallet's fees, consumed by its first increment transaction. `None`
+    /// on zero-fee chains.
+    pub wallet_funding_note: Option<Note>,
 }
 
 /// RPC client and verified transaction-input sealer shared by monitor submission workflows.
@@ -296,6 +306,7 @@ pub async fn create_genesis_aware_rpc_client(
 pub async fn create_and_deploy_accounts(
     submission_client: &TransactionSubmissionClient,
     prover: &LocalTransactionProver,
+    funding: Option<&FaucetClient>,
 ) -> Result<DeployedMonitorAccounts> {
     info!(target: LOG_TARGET, "Creating fresh monitor accounts");
 
@@ -303,17 +314,62 @@ pub async fn create_and_deploy_accounts(
 
     // The genesis header is immutable, so it is fetched once and reused by every step below.
     let genesis_header = fetch_genesis_block_header(&mut rpc_client).await?;
-    ensure_monitor_supported_fee_parameters(&genesis_header)?;
+    let mut funder = active_fee_funder(&genesis_header, funding, &rpc_client)?;
+    let verification_base_fee = genesis_header.fee_parameters().verification_base_fee();
 
     let (wallet_account, secret_key) = create_wallet_account()?;
     let fee_faucet_id = genesis_header.fee_parameters().fee_faucet_id();
-    let counter_account = create_counter_account(wallet_account.id(), fee_faucet_id)?;
+    let counter_account =
+        create_counter_account(wallet_account.id(), fee_faucet_id, verification_base_fee)?;
 
-    let committed_counter =
-        deploy_counter_account(&counter_account, &genesis_header, submission_client, prover)
-            .await?;
-    let counter_anchor =
-        resolve_counter_anchor(&mut rpc_client, &genesis_header, &committed_counter).await?;
+    // Both vaults start empty, so each account's first transaction pays its fee from a faucet note
+    // consumed in that same transaction.
+    let (counter_funding_note, wallet_funding_note) = match funder.as_mut() {
+        Some(funder) => {
+            let counter_note = funder
+                .fund(counter_account.id(), counter_funding_amount(verification_base_fee))
+                .await
+                .context("failed to fund the counter account")?;
+            let wallet_note = funder
+                .fund(wallet_account.id(), wallet_funding_amount(verification_base_fee))
+                .await
+                .context("failed to fund the wallet account")?;
+            (Some(counter_note), Some(wallet_note))
+        },
+        None => (None, None),
+    };
+
+    // The creation transaction anchors at the tip; on fee-charging chains the fee faucet is
+    // provisioned as committed in that block (see `fetch_foreign_account_inputs`).
+    let (tip_header, blockchain) =
+        fetch_tip_chain_state(&mut rpc_client, genesis_header.commitment()).await?;
+    let creation_fee_faucet = match funder.as_ref() {
+        Some(_) => Some(
+            fetch_foreign_account_inputs(&mut rpc_client, fee_faucet_id, tip_header.block_num())
+                .await
+                .context("failed to fetch the fee faucet's state at the reference block")?,
+        ),
+        None => None,
+    };
+
+    let committed_counter = deploy_counter_account(
+        &counter_account,
+        tip_header,
+        blockchain,
+        counter_funding_note,
+        creation_fee_faucet,
+        submission_client,
+        prover,
+    )
+    .await?;
+    let anchored_fee_faucet_id = funder.is_some().then_some(fee_faucet_id);
+    let counter_anchor = resolve_counter_anchor(
+        &mut rpc_client,
+        &genesis_header,
+        &committed_counter,
+        anchored_fee_faucet_id,
+    )
+    .await?;
 
     info!(
         target: LOG_TARGET,
@@ -325,25 +381,157 @@ pub async fn create_and_deploy_accounts(
         secret_key,
         counter: counter_account,
         counter_anchor,
+        wallet_funding_note,
     })
 }
 
-/// Rejects chains the monitor's accounts cannot pay fees on.
+/// A fee-charging chain without a configured faucet. Permanent, so the NTX bootstrap aborts the
+/// monitor instead of retrying (see `run_ntx`).
+#[derive(Debug)]
+pub struct UnsupportedChainError;
+
+impl std::fmt::Display for UnsupportedChainError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            "this chain charges transaction fees: configure --faucet-url so the monitor can fund \
+             its accounts",
+        )
+    }
+}
+
+/// Returns the faucet client on fee-charging chains, `None` on zero-fee chains.
+// TODO(#2450): Mainnet has no faucet service; it needs another funding path.
+pub fn active_fee_funding<'a>(
+    genesis_header: &BlockHeader,
+    funding: Option<&'a FaucetClient>,
+) -> Result<Option<&'a FaucetClient>> {
+    if genesis_header.fee_parameters().verification_base_fee() == 0 {
+        return Ok(None);
+    }
+    funding.map(Some).context(UnsupportedChainError)
+}
+
+/// Returns a [`FeeFunder`] on fee-charging chains, `None` on zero-fee chains.
 ///
-/// Both monitor accounts are created in memory with empty vaults and are never funded: there is no
-/// faucet the monitor could claim the fee asset from. So on a chain with a non-zero verification base
-/// fee the wallet's `AuthSingleSig` fee payment would find no asset to withdraw and the counter's
-/// network transaction would abort the same way, on every single increment. The counter's fee
-/// schedule prices its own note at zero for the same reason.
-pub fn ensure_monitor_supported_fee_parameters(genesis_header: &BlockHeader) -> Result<()> {
-    let verification_base_fee = genesis_header.fee_parameters().verification_base_fee();
+/// The funder binds the faucet client to the given RPC client and to the fee faucet ID from the
+/// genesis fee parameters.
+pub fn active_fee_funder(
+    genesis_header: &BlockHeader,
+    funding: Option<&FaucetClient>,
+    rpc_client: &RpcClient,
+) -> Result<Option<FeeFunder>> {
+    let funder = active_fee_funding(genesis_header, funding)?.map(|faucet| {
+        FeeFunder::new(
+            faucet.clone(),
+            rpc_client.clone(),
+            genesis_header.fee_parameters().fee_faucet_id(),
+        )
+    });
+    Ok(funder)
+}
+
+/// Fetches a public account in full (code, vault, storage with maps) plus its account-tree
+/// witness at the given block.
+///
+/// Used to provision the fee faucet as a foreign account: the fee asset is callback-enabled, so
+/// the kernel loads the issuing faucet whenever the asset enters or leaves a vault.
+pub(crate) async fn fetch_foreign_account_inputs(
+    rpc_client: &mut RpcClient,
+    account_id: AccountId,
+    block_num: BlockNumber,
+) -> Result<(Account, AccountWitness)> {
+    use miden_node_proto::generated::rpc::account_request::AccountDetailRequest;
+    use miden_node_proto::generated::rpc::account_request::account_detail_request::StorageRequest;
+
+    let id_bytes: [u8; 15] = account_id.into();
+    // Dummy commitments force the server to include code and vault data in the response.
+    let dummy: miden_node_proto::generated::primitives::Digest = Word::default().into();
+    let request = ProtoAccountRequest {
+        account_id: Some(miden_node_proto::generated::account::AccountId { id: id_bytes.to_vec() }),
+        block_num: Some(block_num.into()),
+        details: Some(AccountDetailRequest {
+            code_commitment: Some(dummy),
+            asset_vault_commitment: Some(dummy),
+            storage_request: Some(StorageRequest::AllStorageMaps(true)),
+        }),
+    };
+
+    let response = rpc_client
+        .get_account(request)
+        .await
+        .with_context(|| format!("failed to fetch account {account_id}"))?
+        .into_inner();
+    let response =
+        AccountResponse::try_from(response).context("failed to convert the account response")?;
+
+    let witness = response.witness;
     anyhow::ensure!(
-        verification_base_fee == 0,
-        "the network monitor requires a chain with a zero verification base fee, but this chain's \
-         genesis sets it to {verification_base_fee}: the monitor's accounts hold no assets and \
-         cannot pay transaction fees",
+        witness.id() == account_id,
+        "account tree returned a witness for {} when {account_id} was requested",
+        witness.id(),
     );
-    Ok(())
+
+    let details = response
+        .details
+        .with_context(|| format!("no details returned for public account {account_id}"))?;
+
+    let code = AccountCode::read_from_bytes(
+        &details.account_code.context("server did not return the account code")?,
+    )
+    .context("failed to deserialize the account code")?;
+
+    let vault = match details.vault_details {
+        AccountVaultDetails::Assets(assets) => {
+            miden_protocol::asset::AssetVault::new(&assets).context("failed to build the vault")?
+        },
+        AccountVaultDetails::LimitExceeded => {
+            anyhow::bail!("account {account_id} holds too many assets to fetch in full")
+        },
+    };
+
+    // Value slots come from the header, map slots from the map details.
+    let mut map_entries = HashMap::new();
+    for map_detail in details.storage_details.map_details {
+        let StorageMapEntries::AllEntries(entries) = map_detail.entries else {
+            anyhow::bail!("storage map {} was not returned in full", map_detail.slot_name);
+        };
+        map_entries.insert(map_detail.slot_name, entries);
+    }
+
+    let mut slots = Vec::new();
+    for slot in details.storage_details.header.slots() {
+        match slot.slot_type() {
+            StorageSlotType::Value => {
+                slots.push(StorageSlot::with_value(slot.name().clone(), slot.value()));
+            },
+            StorageSlotType::Map => {
+                let entries = map_entries.remove(slot.name()).with_context(|| {
+                    format!("no map entries returned for storage slot {}", slot.name())
+                })?;
+                let map =
+                    StorageMap::with_entries(entries).context("failed to build the storage map")?;
+                anyhow::ensure!(
+                    map.root() == slot.value(),
+                    "storage map root for slot {} does not match the storage header",
+                    slot.name()
+                );
+                slots.push(StorageSlot::with_map(slot.name().clone(), map));
+            },
+        }
+    }
+    let storage = AccountStorage::new(slots).context("failed to build the account storage")?;
+
+    let account =
+        Account::new(account_id, vault, storage, code, details.account_header.nonce(), None)
+            .context("failed to build the account")?;
+
+    // Witness and details come from one response, so a mismatch means a bad reconstruction.
+    anyhow::ensure!(
+        account.to_commitment() == witness.state_commitment(),
+        "reconstructed account {account_id} does not match its witness at block {block_num}",
+    );
+
+    Ok((account, witness))
 }
 
 /// The immutable chain state that counter-increment transactions are anchored at.
@@ -366,6 +554,10 @@ pub struct CounterAnchor {
     pub counter_account: Account,
     /// Witness proving `counter_account`'s inclusion in `block_header`'s account tree.
     pub witness: AccountWitness,
+    /// The fee faucet as committed in `block_header`, with its witness. Every transaction moving
+    /// the callback-enabled fee asset loads the faucet, so increments need it. `None` on zero-fee
+    /// chains.
+    pub fee_faucet: Option<(Account, AccountWitness)>,
 }
 
 /// Number of attempts to resolve the counter anchor before giving up.
@@ -382,6 +574,7 @@ async fn resolve_counter_anchor(
     rpc_client: &mut RpcClient,
     genesis_header: &BlockHeader,
     committed_counter: &Account,
+    fee_faucet_id: Option<AccountId>,
 ) -> Result<CounterAnchor> {
     let genesis_commitment = genesis_header.commitment();
     let expected_state = committed_counter.to_commitment();
@@ -397,6 +590,7 @@ async fn resolve_counter_anchor(
             committed_counter,
             expected_state,
             genesis_commitment,
+            fee_faucet_id,
         )
         .await
         {
@@ -448,6 +642,7 @@ async fn try_resolve_counter_anchor(
     committed_counter: &Account,
     expected_state: Word,
     genesis_commitment: Word,
+    fee_faucet_id: Option<AccountId>,
 ) -> Result<Option<CounterAnchor>> {
     let (block_header, blockchain) = fetch_tip_chain_state(rpc_client, genesis_commitment).await?;
     let block_num = block_header.block_num();
@@ -470,11 +665,21 @@ async fn try_resolve_counter_anchor(
         return Ok(None);
     }
 
+    // The kernel authenticates the faucet against the anchor block's account root, so fetch it
+    // exactly as committed there.
+    let fee_faucet = match fee_faucet_id {
+        Some(faucet_id) => {
+            Some(fetch_foreign_account_inputs(rpc_client, faucet_id, block_num).await?)
+        },
+        None => None,
+    };
+
     Ok(Some(CounterAnchor {
         block_header,
         blockchain,
         counter_account: committed_counter.clone(),
         witness,
+        fee_faucet,
     }))
 }
 
@@ -575,33 +780,41 @@ async fn fetch_genesis_block_header(rpc_client: &mut RpcClient) -> Result<BlockH
 
 /// Execute the counter account's genesis (creation) transaction in-memory.
 ///
-/// Builds a [`MonitorDataStore`] over the genesis block header and executes the creation
+/// Builds a [`MonitorDataStore`] over the given reference block and executes the creation
 /// transaction. Does not prove or submit.
+///
+/// On a fee-charging chain the transaction consumes `funding_note` to pay its fee: a new
+/// account's vault is empty at the prologue, and the fee is withdrawn in the epilogue, after the
+/// note's assets land. The note is consumed unauthenticated; the node authenticates it at
+/// submission.
 pub(crate) async fn execute_counter_genesis_tx(
     counter_account: &Account,
-    genesis_header: &BlockHeader,
+    reference_header: BlockHeader,
+    blockchain: PartialBlockchain,
+    funding_note: Option<Note>,
+    fee_faucet: Option<(Account, AccountWitness)>,
 ) -> Result<ExecutedTransaction> {
-    let genesis_header = genesis_header.clone();
-
-    let genesis_chain_mmr =
-        PartialBlockchain::new(PartialMmr::from_peaks(MmrPeaks::default()), Vec::new())
-            .context("Failed to create empty ChainMmr")?;
-
-    let mut data_store = MonitorDataStore::new(genesis_header, genesis_chain_mmr);
+    let reference_block = reference_header.block_num();
+    let mut data_store = MonitorDataStore::new(reference_header, blockchain);
     data_store.add_account(counter_account.clone());
+    // Paying the fee moves the callback-enabled asset, which loads the issuing faucet.
+    if let Some((faucet_account, faucet_witness)) = fee_faucet {
+        data_store.add_foreign_account(faucet_account, faucet_witness);
+    }
 
     let executor: TransactionExecutor<'_, '_, _, BasicAuthenticator> =
         TransactionExecutor::new(&data_store);
 
     let tx_args = TransactionArgs::default();
 
+    let input_notes = match funding_note {
+        Some(note) => InputNotes::new(vec![InputNote::unauthenticated(note)])
+            .context("failed to build the creation transaction's input notes")?,
+        None => InputNotes::default(),
+    };
+
     let executed_tx = executor
-        .execute_transaction(
-            counter_account.id(),
-            BlockNumber::GENESIS,
-            InputNotes::default(),
-            tx_args,
-        )
+        .execute_transaction(counter_account.id(), reference_block, input_notes, tx_args)
         .await
         .context("Failed to execute transaction")?;
 
@@ -616,16 +829,52 @@ pub(crate) async fn execute_counter_genesis_tx(
 /// handshake plus a single read of the genesis block header, which supplies both the reference block
 /// and the fee faucet the counter's fee policy is denominated in. Nothing is proven or submitted
 /// here.
-pub async fn build_probe_transaction_inputs(rpc_url: &Url) -> Result<TransactionInputs> {
+///
+/// On a fee-charging chain a faucet note is claimed and consumed to pay the fee. The transaction
+/// is never submitted, so the note is never spent on-chain: one claim serves every probe run.
+pub async fn build_probe_transaction_inputs(
+    rpc_url: &Url,
+    funding: Option<&FaucetClient>,
+) -> Result<TransactionInputs> {
     let (wallet_account, _secret_key) = create_wallet_account()?;
 
     let (mut rpc_client, _) =
         create_genesis_aware_rpc_client(rpc_url, Duration::from_secs(10)).await?;
     let genesis_header = fetch_genesis_block_header(&mut rpc_client).await?;
-    ensure_monitor_supported_fee_parameters(&genesis_header)?;
+    let mut funder = active_fee_funder(&genesis_header, funding, &rpc_client)?;
+    let verification_base_fee = genesis_header.fee_parameters().verification_base_fee();
     let fee_faucet_id = genesis_header.fee_parameters().fee_faucet_id();
-    let counter_account = create_counter_account(wallet_account.id(), fee_faucet_id)?;
-    let executed_tx = execute_counter_genesis_tx(&counter_account, &genesis_header).await?;
+    let counter_account =
+        create_counter_account(wallet_account.id(), fee_faucet_id, verification_base_fee)?;
+
+    let (tip_header, blockchain) =
+        fetch_tip_chain_state(&mut rpc_client, genesis_header.commitment()).await?;
+    let (funding_note, fee_faucet) = match funder.as_mut() {
+        Some(funder) => {
+            let note = funder
+                .fund(counter_account.id(), counter_funding_amount(verification_base_fee))
+                .await
+                .context("failed to fund the probe's counter account")?;
+            let faucet = fetch_foreign_account_inputs(
+                &mut rpc_client,
+                fee_faucet_id,
+                tip_header.block_num(),
+            )
+            .await
+            .context("failed to fetch the fee faucet's state at the reference block")?;
+            (Some(note), Some(faucet))
+        },
+        None => (None, None),
+    };
+
+    let executed_tx = execute_counter_genesis_tx(
+        &counter_account,
+        tip_header,
+        blockchain,
+        funding_note,
+        fee_faucet,
+    )
+    .await?;
 
     Ok(executed_tx.tx_inputs().clone())
 }
@@ -638,11 +887,21 @@ pub async fn build_probe_transaction_inputs(rpc_url: &Url) -> Result<Transaction
 )]
 pub async fn deploy_counter_account(
     counter_account: &Account,
-    genesis_header: &BlockHeader,
+    reference_header: BlockHeader,
+    blockchain: PartialBlockchain,
+    funding_note: Option<Note>,
+    fee_faucet: Option<(Account, AccountWitness)>,
     submission_client: &TransactionSubmissionClient,
     prover: &LocalTransactionProver,
 ) -> Result<Account> {
-    let executed_tx = execute_counter_genesis_tx(counter_account, genesis_header).await?;
+    let executed_tx = execute_counter_genesis_tx(
+        counter_account,
+        reference_header,
+        blockchain,
+        funding_note,
+        fee_faucet,
+    )
+    .await?;
 
     let transaction_inputs = executed_tx.tx_inputs().to_bytes();
 
@@ -820,29 +1079,46 @@ impl MastForestStore for MonitorDataStore {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use miden_testing::MockChain;
 
-    use super::ensure_monitor_supported_fee_parameters;
+    use super::{FaucetClient, active_fee_funding};
 
-    /// A zero verification base fee is the only configuration the monitor's asset-less accounts can
-    /// operate under, and the guard must say so at startup instead of letting every increment abort
-    /// inside fee payment.
+    /// A fee-charging chain without a faucet must fail at startup; a zero-fee chain must not fund
+    /// even when a faucet is configured.
     #[test]
-    fn fee_parameter_guard_accepts_only_a_zero_base_fee() {
+    fn fee_funding_is_required_exactly_on_fee_charging_chains() {
+        let funding = FaucetClient::new(
+            url::Url::parse("http://faucet.invalid").expect("static URL is valid"),
+            Duration::from_secs(1),
+        );
+
         let zero_fee_chain = MockChain::builder().build().expect("chain should build");
-        ensure_monitor_supported_fee_parameters(&zero_fee_chain.genesis_block_header())
-            .expect("a zero base fee is supported");
+        let active = active_fee_funding(&zero_fee_chain.genesis_block_header(), Some(&funding))
+            .expect("a zero base fee needs no funding");
+        assert!(active.is_none(), "no funding must happen on a zero-fee chain");
 
         let fee_charging_chain = MockChain::builder()
             .verification_base_fee(500)
             .build()
             .expect("chain should build");
-        let err =
-            ensure_monitor_supported_fee_parameters(&fee_charging_chain.genesis_block_header())
-                .expect_err("a non-zero base fee must be rejected");
+        let genesis_header = fee_charging_chain.genesis_block_header();
+
+        let active = active_fee_funding(&genesis_header, Some(&funding))
+            .expect("a fee-charging chain with a faucet is supported");
+        assert!(active.is_some(), "funding must be active on a fee-charging chain");
+
+        let err = active_fee_funding(&genesis_header, None)
+            .expect_err("a fee-charging chain without a faucet must be rejected");
         assert!(
-            format!("{err:#}").contains("500"),
-            "the error should name the offending base fee, got: {err:#}"
+            format!("{err:#}").contains("--faucet-url"),
+            "the error should point at the missing configuration, got: {err:#}"
+        );
+        // The bootstrap retry loop keys on this downcast to abort instead of retrying.
+        assert!(
+            err.downcast_ref::<super::UnsupportedChainError>().is_some(),
+            "the missing-faucet error must be typed as permanent"
         );
     }
 }

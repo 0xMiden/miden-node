@@ -30,6 +30,7 @@ ENV RUSTUP_HOME=/usr/local/rustup \
 ARG RUST_VERSION
 # Code generation requires rustfmt.
 RUN curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
+        --retry 5 --retry-max-time 120 \
         https://sh.rustup.rs --output /tmp/rustup-init.sh && \
     sh /tmp/rustup-init.sh -y --no-modify-path --profile minimal \
         --default-toolchain "${RUST_VERSION}" --component rustfmt && \
@@ -52,6 +53,7 @@ RUN case "${TARGETARCH}" in \
     esac && \
     KACHE_ARCHIVE="kache-${KACHE_ARCH}-unknown-linux-musl.tar.gz" && \
     curl --fail --location --silent --show-error \
+        --retry 5 --retry-max-time 120 \
         "https://github.com/kunobi-ninja/kache/releases/download/v${KACHE_VERSION}/${KACHE_ARCHIVE}" \
         --output "/tmp/${KACHE_ARCHIVE}" && \
     printf '%s  %s\n' "${KACHE_SHA256}" "/tmp/${KACHE_ARCHIVE}" | \

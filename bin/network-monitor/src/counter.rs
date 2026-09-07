@@ -30,7 +30,7 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::transaction::{InputNote, InputNotes, TransactionArgs, TransactionScript};
-use miden_protocol::utils::serde::{Deserializable, Serializable};
+use miden_protocol::utils::serde::Serializable;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::{FeeConversionInfo, commit_fee_conversion_info};
 use miden_standards::code_builder::CodeBuilder;
@@ -1041,8 +1041,8 @@ fn build_account_request(
         miden_node_proto::generated::account::AccountId { id: id_bytes.to_vec() };
 
     let (code_commitment, asset_vault_commitment) = if include_code_and_vault {
-        let dummy: miden_node_proto::generated::primitives::Digest = Word::default().into();
-        (Some(dummy), Some(dummy))
+        let dummy: miden_node_proto::generated::primitives::Word = Word::default().into();
+        (Some(dummy.clone()), Some(dummy))
     } else {
         (None, None)
     };
@@ -1095,12 +1095,11 @@ async fn fetch_wallet_account(
     let header = details.header.context("missing account header")?;
     let nonce: u64 = header.nonce;
 
-    let code = details
+    let code: AccountCode = details
         .code
-        .map(|code_bytes| AccountCode::read_from_bytes(&code_bytes))
-        .transpose()
-        .context("failed to deserialize account code")?
-        .context("server did not return account code")?;
+        .context("server did not return account code")?
+        .try_into()
+        .context("failed to decode account code")?;
 
     let vault = match details.vault_details {
         Some(vault_details) if vault_details.too_many_assets => {

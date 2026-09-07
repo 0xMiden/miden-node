@@ -1190,9 +1190,8 @@ mod tests {
         let terminal_grpc = RpcError::GrpcClientError(tonic::Status::invalid_argument("bad input"));
         assert!(!is_transient_rpc_error(&terminal_grpc));
 
-        let non_grpc = RpcError::Deserialize(
-            miden_protocol::utils::serde::DeserializationError::InvalidValue("bad".into()),
-        );
+        let non_grpc =
+            RpcError::Conversion(miden_node_proto::errors::ConversionError::message("bad input"));
         assert!(!is_transient_rpc_error(&non_grpc));
     }
 

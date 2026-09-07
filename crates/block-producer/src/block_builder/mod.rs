@@ -320,7 +320,7 @@ impl BlockBuilder {
         });
         let responses = self
             .validator
-            .sign_block(proposed_block.clone())
+            .sign_block(&proposed_block, &block_inputs)
             .await
             .map_err(|err| BuildBlockError::ValidateBlockFailed(err.into()))?;
         let (header, body) = build_result

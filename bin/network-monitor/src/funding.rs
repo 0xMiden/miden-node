@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use miden_node_proto::clients::RpcClient;
-use miden_node_proto::generated::note::NoteIdList;
+use miden_node_proto::generated::rpc::NotesByIdRequest;
 use miden_node_tracing::{info, warn};
 use miden_protocol::account::AccountId;
 use miden_protocol::note::{Note, NoteId};
@@ -225,7 +225,7 @@ async fn await_committed_note(rpc_client: &mut RpcClient, note_id: NoteId) -> Re
 /// Fetches one public note by ID; `Ok(None)` while the note is not committed yet.
 async fn fetch_note(rpc_client: &mut RpcClient, note_id: NoteId) -> Result<Option<Note>> {
     let response = rpc_client
-        .get_notes_by_id(NoteIdList { ids: vec![note_id.as_word().into()] })
+        .get_notes_by_id(NotesByIdRequest { note_ids: vec![(&note_id).into()] })
         .await
         .context("failed to fetch the funding note from RPC")?
         .into_inner();

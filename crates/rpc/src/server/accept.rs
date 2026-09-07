@@ -157,6 +157,8 @@ impl AcceptHeaderLayer {
             return Ok(());
         }
 
+        let mut candidate_error = None;
+
         // Parse media types until we find one we support.
         //
         // Since we only support a single RPC version and a single network, there is no need for
@@ -201,11 +203,16 @@ impl AcceptHeaderLayer {
             // The VersionReq checks major.minor compatibility. Pre-release labels are
             // checked separately because semver's VersionReq matching rejects all
             // pre-release versions when the comparator has no pre-release component.
-            let version = media_type
-                .get_param(Self::VERSION)
-                .map(|value| Version::parse(value.unquoted_str().as_ref()))
-                .transpose()
-                .map_err(AcceptHeaderError::InvalidVersion)?;
+            let version = match media_type.get_param(Self::VERSION) {
+                Some(value) => match Version::parse(value.unquoted_str().as_ref()) {
+                    Ok(version) => Some(version),
+                    Err(err) => {
+                        candidate_error.get_or_insert(AcceptHeaderError::InvalidVersion(err));
+                        continue;
+                    },
+                },
+                None => None,
+            };
             if let Some(version) = &version {
                 // Check major.minor match by stripping pre-release first.
                 let stable_version = Version {
@@ -244,7 +251,7 @@ impl AcceptHeaderLayer {
 
         // We've already handled the case where there are no media types specified, so if we are
         // here its because the client _did_ specify some but none of them are a match.
-        Err(AcceptHeaderError::NoSupportedMediaRange)
+        Err(candidate_error.unwrap_or(AcceptHeaderError::NoSupportedMediaRange))
     }
 }
 
@@ -442,6 +449,9 @@ mod tests {
     #[case::trailing_comma("application/vnd.miden, ")]
     // This should pass because the 2nd option is valid.
     #[case::multiple_types("application/vnd.miden; version=2.0.0, application/vnd.miden")]
+    #[case::malformed_then_valid(
+        "application/vnd.miden; version=not-a-version, application/vnd.miden"
+    )]
     // Parameter values may be quoted.
     #[case::quoted_quality(r#"application/vnd.miden; q="1""#)]
     #[case::quoted_version(r#"application/vnd.miden; version="0.2.3""#)]

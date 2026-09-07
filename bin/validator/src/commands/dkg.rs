@@ -1570,7 +1570,7 @@ fn take_scalar(bytes: &mut &[u8]) -> anyhow::Result<StorageScalar> {
 
 /// Reads and validates the trusted genesis block used by the ceremony.
 fn read_trusted_genesis(path: &Path) -> anyhow::Result<GenesisBlock> {
-    GenesisBlock::try_from(read_genesis_block(path)?).context("failed to validate genesis block")
+    read_genesis_block(path).context("failed to validate genesis block")
 }
 
 /// Commits a validator signature to one genesis-bound DKG identity registration.

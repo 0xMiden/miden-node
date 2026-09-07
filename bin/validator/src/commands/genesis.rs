@@ -64,7 +64,7 @@ pub fn generate(
     let genesis_block = genesis_state.into_block().context("failed to build the genesis block")?;
 
     let genesis_block_path = genesis_block_directory.join(GENESIS_BLOCK_FILE_NAME);
-    fs_err::write(&genesis_block_path, genesis_block.inner().to_bytes())
+    fs_err::write(&genesis_block_path, genesis_block.to_bytes())
         .context("failed to write genesis block")?;
 
     println!("Genesis block written to {}.", genesis_block_path.display());

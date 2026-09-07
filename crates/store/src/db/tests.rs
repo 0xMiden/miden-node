@@ -1,7 +1,7 @@
 use std::sync::{Arc, LazyLock, Mutex};
 
 use assert_matches::assert_matches;
-use diesel::{Connection, ExpressionMethods, RunQueryDsl, SqliteConnection};
+use diesel::{Connection, ExpressionMethods, QueryDsl, RunQueryDsl, SqliteConnection};
 use miden_node_proto::domain::account::{AccountSummary, StorageMapEntries};
 use miden_node_utils::fee::{test_fee_params, test_protocol_config};
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
@@ -99,6 +99,59 @@ use crate::errors::DatabaseError;
 
 fn create_db() -> SqliteConnection {
     crate::db::migrations::test_connection()
+}
+
+fn empty_genesis_block() -> crate::genesis::GenesisBlock {
+    use crate::genesis::GenesisState;
+
+    let signer = random_secret_key();
+    GenesisState::new(
+        Vec::new(),
+        test_fee_params(),
+        1,
+        0,
+        ValidatorConfig::new(vec![signer.public_key()], 1).unwrap(),
+        test_protocol_config(),
+    )
+    .into_block()
+    .unwrap()
+}
+
+#[tokio::test]
+async fn bootstrap_stores_protocol_config_across_reopen() {
+    let temp_dir = tempdir().unwrap();
+    let db_path = temp_dir.path().join("store.sqlite");
+    let genesis = empty_genesis_block();
+    let commitment = genesis.protocol_config().to_commitment();
+    let expected = genesis.protocol_config().clone();
+
+    super::Db::bootstrap(db_path.clone(), genesis).unwrap();
+    let db = super::Db::load(db_path).await.unwrap();
+
+    assert_eq!(
+        db.select_protocol_config_by_commitment(commitment).await.unwrap(),
+        Some(expected)
+    );
+}
+
+#[test]
+fn bootstrap_rolls_back_protocol_config_when_genesis_insert_fails() {
+    let temp_dir = tempdir().unwrap();
+    let db_path = temp_dir.path().join("store.sqlite");
+    crate::db::migrations::bootstrap_database(&db_path).unwrap();
+    let mut conn = SqliteConnection::establish(db_path.to_str().unwrap()).unwrap();
+    let first = empty_genesis_block();
+    let commitment = first.protocol_config().to_commitment();
+    super::insert_genesis(&mut conn, first).unwrap();
+    diesel::delete(
+        crate::db::schema::protocol_configs::table
+            .filter(crate::db::schema::protocol_configs::commitment.eq(commitment.to_bytes())),
+    )
+    .execute(&mut conn)
+    .unwrap();
+
+    assert!(super::insert_genesis(&mut conn, empty_genesis_block()).is_err());
+    assert_eq!(queries::select_protocol_config(&mut conn, commitment).unwrap(), None);
 }
 
 fn block_account_update(

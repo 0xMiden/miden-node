@@ -63,6 +63,18 @@ impl proto::server::rpc_api::SyncNullifiers for RpcService {
                 request.prefix_len
             )));
         }
+
+        // Every prefix must fit in the requested 16-bit prefix length. The store narrows prefixes
+        // with `prefix as u16`, which would otherwise silently truncate an out-of-range value
+        // (e.g. 65536 -> 0) and query a different prefix than the client requested.
+        if let Some(&prefix) =
+            request.nullifiers.iter().find(|&&prefix| prefix > u32::from(u16::MAX))
+        {
+            return Err(Status::invalid_argument(format!(
+                "nullifier prefix {prefix} does not fit in the requested prefix length of 16 bits"
+            )));
+        }
+
         let block_range = range
             .into_inclusive_range::<RpcInvalidBlockRange>()
             .map_err(invalid_block_range_to_status)?;

@@ -1395,6 +1395,30 @@ fn sync_chain_mmr_block_header_matches_chain_commitment() {
     assert_eq!(client_mmr.peaks().hash_peaks(), server_mmr.peaks().hash_peaks());
 }
 
+/// A nullifier prefix that does not fit in the requested 16-bit prefix length must be rejected with
+/// `InvalidArgument`. The store narrows prefixes with `prefix as u16`, so without this check 65536
+/// would be truncated to 0 and silently query a different prefix than the client requested.
+#[tokio::test]
+async fn sync_nullifiers_rejects_prefix_above_u16() {
+    let (mut rpc_client, _rpc_addr, _store, _server) = start_rpc().await;
+
+    let status = rpc_client
+        .sync_nullifiers(proto::rpc::SyncNullifiersRequest {
+            block_range: Some(proto::rpc::BlockRange { block_from: 0, block_to: 0 }),
+            prefix_len: 16,
+            nullifiers: vec![u32::from(u16::MAX) + 1],
+        })
+        .await
+        .expect_err("sync_nullifiers should reject a prefix that does not fit in 16 bits");
+
+    assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    assert!(
+        status.message().contains("does not fit"),
+        "error should mention the prefix does not fit, got: {}",
+        status.message()
+    );
+}
+
 /// All paginated sync endpoints must reject a `block_to` that is greater than the chain tip.
 ///
 /// After bootstrapping, the chain tip is the genesis block (0), so a range ending at block 1 is

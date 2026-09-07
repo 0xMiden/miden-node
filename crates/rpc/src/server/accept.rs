@@ -328,9 +328,8 @@ where
         } else {
             GenesisNegotiation::Optional
         };
-        let result = self
-            .verifier
-            .negotiate_headers(request.headers().get_all(ACCEPT).iter(), mode);
+        let result =
+            self.verifier.negotiate_headers(request.headers().get_all(ACCEPT).iter(), mode);
 
         match result {
             Ok(()) => self.inner.call(request).boxed(),

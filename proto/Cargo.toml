@@ -32,7 +32,6 @@ protox        = { workspace = true }
 
 [dev-dependencies]
 miden-objects = { workspace = true }
-prost-types   = { workspace = true }
 
 [lib]
 doctest = false

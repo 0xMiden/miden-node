@@ -4223,7 +4223,6 @@ dependencies = [
  "fs-err",
  "miden-objects",
  "miette",
- "prost-types",
  "protox",
  "tonic-prost-build",
 ]

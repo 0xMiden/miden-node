@@ -4236,7 +4236,9 @@ dependencies = [
  "build-rs",
  "codegen",
  "fs-err",
+ "miden-objects",
  "miette",
+ "prost-types",
  "protox",
  "tonic-prost-build",
 ]
@@ -4459,6 +4461,18 @@ dependencies = [
  "tonic-reflection",
  "tower-http",
  "url",
+]
+
+[[package]]
+name = "miden-objects"
+version = "0.17.0-rc.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ad8ade9bb1740dd09d9873fee7d51b9ea63d38aa0971b19455848681042d94e"
+dependencies = [
+ "miden-protocol",
+ "prost",
+ "prost-build",
+ "protox",
 ]
 
 [[package]]

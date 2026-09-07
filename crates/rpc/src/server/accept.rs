@@ -6,7 +6,6 @@ use futures::future::BoxFuture;
 use http::header::{ACCEPT, ToStrError};
 use mediatype::{Name, ReadParams};
 use miden_node_tracing::ErrorReport;
-use miden_node_utils::FlattenResult;
 use miden_protocol::{Word, WordError};
 use semver::{Comparator, Version, VersionReq};
 use tower::{Layer, Service};
@@ -137,6 +136,25 @@ impl AcceptHeaderLayer {
     const VERSION: Name<'static> = Name::new_unchecked("version");
     const GENESIS: Name<'static> = Name::new_unchecked("genesis");
     const GRPC: Name<'static> = Name::new_unchecked("grpc");
+
+    /// Parses repeated `Accept` header field values as one combined field value, as required by
+    /// HTTP list-header semantics.
+    fn negotiate_headers<'a>(
+        &self,
+        headers: impl IntoIterator<Item = &'a http::HeaderValue>,
+        genesis_mode: GenesisNegotiation,
+    ) -> Result<(), AcceptHeaderError> {
+        let mut accept = String::new();
+
+        for header in headers {
+            if !accept.is_empty() {
+                accept.push(',');
+            }
+            accept.push_str(header.to_str().map_err(AcceptHeaderError::InvalidUtf8)?);
+        }
+
+        self.negotiate(&accept, genesis_mode)
+    }
 
     /// Parses the `Accept` header's contents, searching for any media type compatible with our RPC
     /// version and genesis commitment, controlling whether `genesis` is optional or mandatory.
@@ -294,7 +312,7 @@ where
         let requires_genesis = self.verifier.require_genesis_methods.contains(&method_name);
 
         // If `genesis` is required but the header is missing entirely, reject early.
-        let Some(header) = request.headers().get(ACCEPT) else {
+        if !request.headers().contains_key(ACCEPT) {
             if requires_genesis {
                 let response = tonic::Status::invalid_argument(
                     "Accept header with 'genesis' parameter is required for write RPC methods",
@@ -303,20 +321,16 @@ where
                 return futures::future::ready(Ok(response)).boxed();
             }
             return self.inner.call(request).boxed();
-        };
+        }
 
-        let result = header
-            .to_str()
-            .map_err(AcceptHeaderError::InvalidUtf8)
-            .map(|header| {
-                let mode = if requires_genesis {
-                    GenesisNegotiation::Mandatory
-                } else {
-                    GenesisNegotiation::Optional
-                };
-                self.verifier.negotiate(header, mode)
-            })
-            .flatten_result();
+        let mode = if requires_genesis {
+            GenesisNegotiation::Mandatory
+        } else {
+            GenesisNegotiation::Optional
+        };
+        let result = self
+            .verifier
+            .negotiate_headers(request.headers().get_all(ACCEPT).iter(), mode);
 
         match result {
             Ok(()) => self.inner.call(request).boxed(),
@@ -460,6 +474,27 @@ mod tests {
     fn request_should_pass(#[case] accept: &'static str) {
         AcceptHeaderLayer::for_tests()
             .negotiate(accept, super::GenesisNegotiation::Optional)
+            .unwrap();
+    }
+
+    #[test]
+    fn repeated_accept_fields_consider_all_values() {
+        let layer = AcceptHeaderLayer::for_tests();
+        let mut headers = http::HeaderMap::new();
+        headers.append(
+            http::header::ACCEPT,
+            http::HeaderValue::from_static("application/vnd.miden; version=9.0.0"),
+        );
+        headers.append(
+            http::header::ACCEPT,
+            http::HeaderValue::from_static("application/vnd.miden; version=0.2.3"),
+        );
+
+        layer
+            .negotiate_headers(
+                headers.get_all(http::header::ACCEPT).iter(),
+                super::GenesisNegotiation::Optional,
+            )
             .unwrap();
     }
 

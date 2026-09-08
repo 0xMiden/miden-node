@@ -34,6 +34,7 @@ use miden_protocol::note::{
     NoteScript,
     Nullifier,
 };
+use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::transaction::TransactionHeader;
 use miden_protocol::utils::serde::Deserializable;
 
@@ -100,6 +101,20 @@ impl Default for DatabaseOptions {
 /// Extends the underlying [`miden_node_db::Db`] type with functionality specific to the Store.
 pub struct Db {
     db: miden_node_db::Db,
+}
+
+fn insert_genesis(conn: &mut SqliteConnection, genesis: GenesisBlock) -> Result<()> {
+    let (genesis_block, protocol_config) = genesis.into_parts();
+    conn.transaction(move |conn| {
+        models::queries::insert_protocol_config(conn, &protocol_config)?;
+        models::queries::apply_block(
+            conn,
+            &genesis_block,
+            &[],
+            &PrecomputedPublicAccountStates::new(),
+        )
+    })?;
+    Ok(())
 }
 
 impl Deref for Db {
@@ -223,16 +238,7 @@ impl Db {
         miden_node_db::configure_connection_on_creation(&mut conn)?;
 
         // Insert genesis block data.
-        let genesis_block = genesis.into_inner();
-        conn.transaction(move |conn| {
-            models::queries::apply_block(
-                conn,
-                &genesis_block,
-                &[],
-                &PrecomputedPublicAccountStates::new(),
-            )
-        })
-        .context("failed to insert genesis block")?;
+        insert_genesis(&mut conn, genesis).context("failed to insert genesis block")?;
         Ok(())
     }
 
@@ -265,6 +271,22 @@ impl Db {
         );
 
         Ok(Self { db })
+    }
+
+    /// Selects a protocol configuration by its commitment.
+    #[miden_instrument(
+        level = "debug",
+        target = COMPONENT,
+        err,
+    )]
+    pub async fn select_protocol_config_by_commitment(
+        &self,
+        commitment: Word,
+    ) -> Result<Option<ProtocolConfig>> {
+        self.transact("protocol config by commitment", move |conn| {
+            queries::select_protocol_config(conn, commitment)
+        })
+        .await
     }
 
     /// Applies all pending migrations to an existing DB.
@@ -343,6 +365,14 @@ impl Db {
                 maybe_block_number.map(|block_number| *block_number),
             )?;
             Ok(val)
+        })
+        .await
+    }
+
+    /// Selects the genesis block header for state initialization.
+    pub(crate) async fn select_genesis_block_header(&self) -> Result<Option<BlockHeader>> {
+        self.transact("genesis block header", |conn| {
+            queries::select_block_header_by_block_num(conn, Some(BlockNumber::GENESIS))
         })
         .await
     }

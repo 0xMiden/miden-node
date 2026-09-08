@@ -79,8 +79,7 @@ fn write_genesis_with_validator_count(
         Some(&config_path),
         validators,
     )?;
-    let genesis =
-        GenesisBlock::try_from(read_genesis_block(&genesis_directory.join("genesis.dat"))?)?;
+    let genesis = read_genesis_block(&genesis_directory.join("genesis.dat"))?;
     Ok(TestGenesis {
         path: genesis_directory.join("genesis.dat"),
         signing_keys,

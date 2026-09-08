@@ -60,14 +60,34 @@ pub fn migrate(database_filepath: impl AsRef<Path>) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod bootstrap_tests {
-    use miden_node_store::genesis::GenesisBlock;
+    use miden_node_store::genesis::{GenesisBlock, GenesisState};
+    use miden_node_utils::fee::{test_fee_params, test_protocol_config};
     use miden_protocol::block::{BlockSignatures, SignedBlock};
     use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 
-    #[test]
-    fn genesis_block_accepts_unsigned_block() {
-        let block = crate::test_utils::mock_genesis_block();
-        GenesisBlock::try_from(block).expect("unsigned genesis block should validate");
+    #[tokio::test]
+    async fn bootstrap_accepts_genesis_artifact_with_protocol_config() {
+        use miden_node_utils::genesis::read_genesis_block;
+        use miden_protocol::utils::serde::Serializable;
+
+        let genesis = GenesisState::new(
+            Vec::new(),
+            test_fee_params(),
+            1,
+            0,
+            crate::test_utils::mock_genesis_block().header().validator_config().clone(),
+            test_protocol_config(),
+        )
+        .into_block()
+        .unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("genesis.dat");
+        std::fs::write(&path, genesis.to_bytes()).unwrap();
+        let decoded = read_genesis_block(&path).unwrap();
+        assert_eq!(decoded.protocol_config(), genesis.protocol_config());
+        let database_path = root.path().join("ntx.sqlite3");
+        super::bootstrap(database_path.clone(), &decoded).await.unwrap();
+        assert!(database_path.is_file());
     }
 
     #[test]
@@ -77,7 +97,8 @@ mod bootstrap_tests {
         let signatures = BlockSignatures::new(vec![signature]).unwrap();
         let block = SignedBlock::new_unchecked(header, body, signatures);
 
-        let err = GenesisBlock::try_from(block).expect_err("signed genesis block should fail");
+        let err = GenesisBlock::new(block, test_protocol_config())
+            .expect_err("signed genesis block should fail");
 
         assert!(err.to_string().contains("must not carry signatures"), "unexpected error: {err}");
     }

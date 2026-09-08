@@ -45,3 +45,7 @@ url                = { workspace = true }
 
 # RocksDbConfig is needed due to orphan rules
 miden-crypto = { optional = true, workspace = true }
+
+[dev-dependencies]
+miden-protocol = { features = ["testing"], workspace = true }
+tempfile       = { workspace = true }

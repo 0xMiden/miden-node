@@ -20,6 +20,8 @@ use miden_protocol::transaction::OrderedTransactionHeaders;
 
 pub mod config;
 
+pub use miden_node_utils::genesis::GenesisBlock;
+
 // GENESIS STATE
 // ================================================================================================
 
@@ -32,44 +34,6 @@ pub struct GenesisState {
     pub timestamp: u32,
     pub validator_config: ValidatorConfig,
     pub protocol_config: ProtocolConfig,
-}
-
-/// A type-safety wrapper ensuring that genesis block data can only be created from [`GenesisState`]
-/// or validated from a [`SignedBlock`] via [`GenesisBlock::try_from`].
-#[derive(Debug)]
-pub struct GenesisBlock(SignedBlock);
-
-impl GenesisBlock {
-    pub fn inner(&self) -> &SignedBlock {
-        &self.0
-    }
-
-    pub fn into_inner(self) -> SignedBlock {
-        self.0
-    }
-}
-
-impl TryFrom<SignedBlock> for GenesisBlock {
-    type Error = anyhow::Error;
-
-    fn try_from(block: SignedBlock) -> anyhow::Result<Self> {
-        anyhow::ensure!(
-            block.header().block_num() == BlockNumber::GENESIS,
-            "expected genesis block number (0), got {}",
-            block.header().block_num(),
-        );
-
-        // The genesis block has no parent and is not signed: it acts as the chain's trust root and
-        // must be obtained from a trusted source. Its header commits to the validator set, which is
-        // required to sign every block after genesis.
-        anyhow::ensure!(
-            block.signatures().is_empty(),
-            "genesis block must not carry signatures, got {}",
-            block.signatures().len(),
-        );
-
-        Ok(Self(block))
-    }
 }
 
 impl GenesisState {
@@ -163,6 +127,6 @@ impl GenesisState {
         let signatures = BlockSignatures::new(Vec::new())
             .map_err(|err| anyhow::anyhow!("failed to build empty genesis signatures: {err}"))?;
 
-        Ok(GenesisBlock(SignedBlock::new(header, body, signatures)?))
+        GenesisBlock::new(SignedBlock::new(header, body, signatures)?, self.protocol_config)
     }
 }

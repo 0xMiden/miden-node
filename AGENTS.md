@@ -15,7 +15,8 @@ Use `make format` to format code.
 Write tests that check observable behavior and requirements.
 Do not write tests that fail only because the implementation changes while
 the behavior remains correct.
-Do not write tests that only check that the code matches its implementation.
+Do not write tests that merely repeat the implementation logic or assert the
+structure of the source code.
 
 ## Code Comment Style
 

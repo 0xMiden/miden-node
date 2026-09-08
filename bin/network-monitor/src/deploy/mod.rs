@@ -22,14 +22,13 @@ use miden_node_proto::generated::rpc::{
     FinalityLevel,
     SyncChainMmrRequest,
 };
-use miden_node_proto::generated::transaction::ProvenTransaction as ProtoProvenTransaction;
+use miden_node_proto::generated::submission::ProvenTransactionSubmission as ProtoProvenTransaction;
 use miden_node_tracing::spawn::spawn_blocking_in_current_span;
 use miden_node_tracing::{debug, info, miden_instrument, warn};
 use miden_node_utils::retry;
 use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
-    AccountCode,
     AccountId,
     AccountStorage,
     PartialAccount,
@@ -66,7 +65,7 @@ use miden_protocol::transaction::{
     TransactionArgs,
     TransactionInputs,
 };
-use miden_protocol::utils::serde::{Deserializable, Serializable};
+use miden_protocol::utils::serde::Serializable;
 use miden_protocol::vm::FutureMaybeSend;
 use miden_standards::note::P2idNoteStorage;
 use miden_standards::tx_script::SendNotesTransactionScript;
@@ -172,7 +171,8 @@ impl TransactionSubmissionClient {
         proven_tx: &ProvenTransaction,
         transaction_inputs: &[u8],
     ) -> Result<BlockNumber> {
-        let transaction = proven_tx.to_bytes();
+        let transaction: miden_node_proto::generated::transaction::ProvenTransaction =
+            proven_tx.into();
         let tx_id = proven_tx.id();
         let stale_key = AtomicBool::new(false);
 
@@ -191,7 +191,7 @@ impl TransactionSubmissionClient {
                 self.rpc_client
                     .clone()
                     .submit_proven_tx(ProtoProvenTransaction {
-                        transaction,
+                        transaction: Some(transaction),
                         sealed_transaction_inputs: Some(sealed),
                     })
                     .await
@@ -458,12 +458,12 @@ pub(crate) async fn fetch_foreign_account_inputs(
 
     let id_bytes: [u8; 15] = account_id.into();
     // Dummy commitments force the server to include code and vault data in the response.
-    let dummy: miden_node_proto::generated::primitives::Digest = Word::default().into();
+    let dummy: miden_node_proto::generated::primitives::Word = Word::default().into();
     let request = ProtoAccountRequest {
         account_id: Some(miden_node_proto::generated::account::AccountId { id: id_bytes.to_vec() }),
         block_num: Some(block_num.into()),
         details: Some(AccountDetailRequest {
-            code_commitment: Some(dummy),
+            code_commitment: Some(dummy.clone()),
             asset_vault_commitment: Some(dummy),
             storage_request: Some(StorageRequest::AllStorageMaps(true)),
         }),
@@ -488,10 +488,7 @@ pub(crate) async fn fetch_foreign_account_inputs(
         .details
         .with_context(|| format!("no details returned for public account {account_id}"))?;
 
-    let code = AccountCode::read_from_bytes(
-        &details.account_code.context("server did not return the account code")?,
-    )
-    .context("failed to deserialize the account code")?;
+    let code = details.account_code.context("server did not return the account code")?;
 
     let vault = match details.vault_details {
         AccountVaultDetails::Assets(assets) => {

@@ -27,7 +27,6 @@ use miden_node_utils::retry::{self, Retryable};
 use miden_node_tracing::{debug, info, miden_instrument, warn};
 use miden_protocol::Word;
 use miden_protocol::account::{
-    AccountCode,
     AccountId,
     PartialAccount,
     PartialStorage,
@@ -40,7 +39,7 @@ use miden_protocol::block::{BlockNumber, SignedBlock};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey as ValidatorPublicKey;
 use miden_protocol::note::NoteScript;
 use miden_protocol::transaction::{AccountInputs, ProvenTransaction, TransactionInputs};
-use miden_protocol::utils::serde::{Deserializable, Serializable};
+use miden_protocol::utils::serde::Serializable;
 use thiserror::Error;
 use tonic::Status;
 use tonic::metadata::AsciiMetadataValue;
@@ -346,7 +345,7 @@ impl RpcClient {
         proven_tx: &ProvenTransaction,
         tx_inputs: &TransactionInputs,
     ) -> Result<(), Status> {
-        let transaction = proven_tx.to_bytes();
+        let transaction: proto::transaction::ProvenTransaction = proven_tx.into();
         let transaction_inputs = tx_inputs.to_bytes();
         let tx_id = proven_tx.id();
         let stale_key = AtomicBool::new(false);
@@ -368,8 +367,8 @@ impl RpcClient {
                     )
                 })?;
                 client
-                    .submit_proven_tx(proto::transaction::ProvenTransaction {
-                        transaction,
+                    .submit_proven_tx(proto::submission::ProvenTransactionSubmission {
+                        transaction: Some(transaction),
                         sealed_transaction_inputs: Some(sealed),
                     })
                     .await
@@ -394,7 +393,15 @@ impl RpcClient {
 fn decode_block_subscription_response(
     response: &BlockSubscriptionResponse,
 ) -> Result<(SignedBlock, BlockNumber), RpcError> {
-    let block = SignedBlock::read_from_bytes(&response.block).map_err(RpcError::Deserialize)?;
+    let block = response
+        .block
+        .clone()
+        .ok_or_else(|| {
+            RpcError::InvalidResponse("block subscription response is missing block".into())
+        })?
+        .try_into()
+        .map_err(ConversionError::from)
+        .map_err(RpcError::Conversion)?;
     let committed_tip = BlockNumber::from(response.committed_chain_tip);
     Ok((block, committed_tip))
 }
@@ -493,7 +500,7 @@ impl RpcClient {
                     storage_maps: vec![StorageMapDetailRequest {
                         slot_name: slot_name.to_string(),
                         slot_data: Some(storage_map_detail_request::SlotData::MapKeys(MapKeys {
-                            map_keys: vec![map_key.into()],
+                            map_keys: vec![map_key.as_word().into()],
                         })),
                     }],
                 })),
@@ -548,7 +555,7 @@ impl RpcClient {
         &self,
         script_root: Word,
     ) -> Result<Option<NoteScript>, RpcError> {
-        let request = proto::note::NoteScriptRoot { root: Some(script_root.into()) };
+        let request: proto::primitives::Word = script_root.into();
 
         let script = self
             .inner
@@ -559,7 +566,10 @@ impl RpcClient {
             .into_inner()
             .script;
 
-        script.map(NoteScript::try_from).transpose().map_err(RpcError::Conversion)
+        script
+            .map(NoteScript::try_from)
+            .transpose()
+            .map_err(|err| RpcError::Conversion(err.into()))
     }
 
     /// Issues a `GetAccount` request and decodes the response into the domain [`AccountResponse`].
@@ -581,11 +591,10 @@ impl RpcClient {
 
 /// Builds a minimal partial account from account details.
 fn build_minimal_partial_account(details: &AccountDetails) -> Result<PartialAccount, RpcError> {
-    let code_bytes = details
+    let account_code = details
         .account_code
-        .as_ref()
+        .clone()
         .ok_or_else(|| RpcError::InvalidResponse("response did not include account code".into()))?;
-    let account_code = AccountCode::read_from_bytes(code_bytes).map_err(RpcError::Deserialize)?;
 
     let partial_storage = PartialStorage::new(details.storage_details.header.clone(), [])
         .map_err(|err| RpcError::InvalidResponse(err.as_report()))?;
@@ -610,8 +619,6 @@ fn build_minimal_partial_account(details: &AccountDetails) -> Result<PartialAcco
 pub enum RpcError {
     #[error("RPC gRPC call failed")]
     GrpcClientError(#[source] tonic::Status),
-    #[error("failed to deserialize RPC payload")]
-    Deserialize(#[source] miden_protocol::utils::serde::DeserializationError),
     #[error("failed to convert RPC response")]
     Conversion(#[source] ConversionError),
     #[error("invalid RPC response: {0}")]

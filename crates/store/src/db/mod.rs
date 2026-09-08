@@ -484,9 +484,12 @@ impl Db {
     pub async fn select_account_code_by_commitment(
         &self,
         code_commitment: Word,
-    ) -> Result<Option<Vec<u8>>> {
+    ) -> Result<Option<miden_protocol::account::AccountCode>> {
         self.transact("Get account code by commitment", move |conn| {
-            queries::select_account_code_by_commitment(conn, code_commitment)
+            queries::select_account_code_by_commitment(conn, code_commitment)?
+                .map(|bytes| miden_protocol::account::AccountCode::read_from_bytes(&bytes))
+                .transpose()
+                .map_err(DatabaseError::from)
         })
         .await
     }

@@ -8,7 +8,6 @@ use miden_protocol::account::AccountId;
 use miden_protocol::block::{BlockNumber, FeeParameters};
 use miden_protocol::note::Nullifier;
 use miden_protocol::transaction::{ProvenTransaction, TransactionId, TxAccountUpdate};
-use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_standards::note::TxFeeNote;
 
 use crate::errors::{MempoolSubmissionError, StateConflict};
@@ -174,7 +173,7 @@ impl AuthenticatedTransaction {
 impl From<AuthenticatedTransaction> for sequencer::AuthenticatedTransaction {
     fn from(value: AuthenticatedTransaction) -> Self {
         Self {
-            transaction: value.inner.to_bytes(),
+            transaction: Some(value.inner.as_ref().into()),
             store_account_state: value.store_account_state.map(Into::into),
             notes_authenticated_by_store: value
                 .notes_authenticated_by_store
@@ -190,8 +189,13 @@ impl TryFrom<sequencer::AuthenticatedTransaction> for AuthenticatedTransaction {
     type Error = ConversionError;
 
     fn try_from(value: sequencer::AuthenticatedTransaction) -> Result<Self, Self::Error> {
-        let inner = ProvenTransaction::read_from_bytes(&value.transaction)
-            .map_err(|err| ConversionError::deserialization("transaction", err))?;
+        let inner = value
+            .transaction
+            .ok_or_else(|| {
+                ConversionError::missing_field::<sequencer::AuthenticatedTransaction>("transaction")
+            })?
+            .try_into()
+            .map_err(ConversionError::from)?;
 
         let store_account_state = value.store_account_state.map(Word::try_from).transpose()?;
 
@@ -269,6 +273,18 @@ mod tests {
     use crate::errors::MempoolSubmissionError;
     use crate::test_utils::{MockProvenTxBuilder, mock_account_id};
 
+    #[test]
+    fn authenticated_transaction_proto_roundtrip_preserves_the_transaction() {
+        let transaction = AuthenticatedTransaction::from_inner(
+            MockProvenTxBuilder::with_account_index(1).build(),
+        );
+        let encoded = miden_node_proto::generated::sequencer::AuthenticatedTransaction::from(
+            transaction.clone(),
+        );
+        let decoded = AuthenticatedTransaction::try_from(encoded).unwrap();
+        assert_eq!(decoded, transaction);
+    }
+
     fn fee_parameters(verification_base_fee: u32) -> FeeParameters {
         FeeParameters::new(verification_base_fee)
     }
@@ -319,19 +335,5 @@ mod tests {
         let tx = MockProvenTxBuilder::with_account_index(1).build();
 
         ensure_transaction_has_fee(&tx, &fee_parameters(0)).unwrap();
-    }
-
-    #[test]
-    fn authenticated_transaction_proto_roundtrip_preserves_the_transaction() {
-        let transaction = AuthenticatedTransaction::from_inner(
-            MockProvenTxBuilder::with_account_index(1).build(),
-        );
-
-        let encoded = miden_node_proto::generated::sequencer::AuthenticatedTransaction::from(
-            transaction.clone(),
-        );
-        let decoded = AuthenticatedTransaction::try_from(encoded).unwrap();
-
-        assert_eq!(decoded, transaction);
     }
 }

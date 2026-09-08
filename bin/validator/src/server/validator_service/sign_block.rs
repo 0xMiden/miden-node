@@ -1,40 +1,36 @@
 use std::sync::atomic::Ordering;
 
-use miden_node_proto::generated as grpc;
+use miden_node_proto::{BlockProofRequest, generated as grpc};
+use miden_node_tracing::spawn::spawn_blocking_in_current_span;
 use miden_node_tracing::{ErrorReport, Instrument, info_span, miden_instrument};
 use miden_protocol::Word;
 use miden_protocol::block::{BlockNumber, ProposedBlock};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
-use miden_tx::utils::serde::{Deserializable, Serializable};
 
 use super::ValidatorService;
 use crate::COMPONENT;
 
 #[tonic::async_trait]
 impl grpc::server::validator_api::SignBlock for ValidatorService {
-    type Input = ProposedBlock;
+    type Input = grpc::block_proving::BlockProofRequest;
     type Output = (Signature, Word, PublicKey);
 
     #[miden_instrument(
         target = COMPONENT,
         err,
     )]
-    fn decode(request: grpc::blockchain::ProposedBlock) -> tonic::Result<Self::Input> {
-        ProposedBlock::read_from_bytes(&request.proposed_block).map_err(|err| {
-            tonic::Status::invalid_argument(
-                err.as_report_context("Failed to deserialize proposed block"),
-            )
-        })
+    fn decode(request: grpc::block_proving::BlockProofRequest) -> tonic::Result<Self::Input> {
+        Ok(request)
     }
 
     #[miden_instrument(
         target = COMPONENT,
         err,
     )]
-    fn encode(output: Self::Output) -> tonic::Result<grpc::blockchain::SignBlockResponse> {
+    fn encode(output: Self::Output) -> tonic::Result<grpc::validator::SignBlockResponse> {
         let (signature, block_commitment, public_key) = output;
-        Ok(grpc::blockchain::SignBlockResponse {
-            signature: Some(grpc::blockchain::BlockSignature { signature: signature.to_bytes() }),
+        Ok(grpc::validator::SignBlockResponse {
+            signature: Some(signature.into()),
             block_commitment: Some(block_commitment.into()),
             public_key: Some((&public_key).into()),
         })
@@ -42,7 +38,7 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
 
     async fn handle(
         &self,
-        proposed_block: Self::Input,
+        request: Self::Input,
         _metadata: &tonic::metadata::MetadataMap,
         _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
@@ -61,6 +57,25 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
             .map_err(|err| {
                 tonic::Status::internal(format!("sign_block semaphore closed: {err}"))
             })?;
+
+        let proposed_block = spawn_blocking_in_current_span(move || {
+            let request = BlockProofRequest::try_from(request).map_err(tonic::Status::from)?;
+            ProposedBlock::new_at(
+                request.block_inputs,
+                request.tx_batches.into_vec(),
+                request.block_header.timestamp(),
+            )
+            .map(|block| {
+                block
+                    .with_next_validator_config(request.block_header.validator_config().clone())
+                    .with_next_protocol_config(request.block_header.next_protocol_config().cloned())
+            })
+            .map_err(|error| tonic::Status::invalid_argument(error.to_string()))
+        })
+        .await
+        .map_err(|error| {
+            tonic::Status::internal(format!("block decoding task failed: {error}"))
+        })??;
 
         // Load the current chain tip from the database.
         let chain_tip = self

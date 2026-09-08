@@ -54,5 +54,5 @@ pub async fn fetch_genesis_block(network: OfficialNetwork) -> anyhow::Result<Sig
 }
 
 fn deserialize_genesis_block(bytes: &[u8]) -> anyhow::Result<SignedBlock> {
-    SignedBlock::read_from_bytes(bytes).context("failed to deserialize genesis block")
+    SignedBlock::read_from_bytes(bytes).context("failed to deserialize genesis block; the genesis may have been produced by an incompatible node version")
 }

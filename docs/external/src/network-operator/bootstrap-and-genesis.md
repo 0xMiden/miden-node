@@ -15,13 +15,6 @@ block, it must always be obtained from a trusted source. One of the network's op
 from the genesis configuration. On official networks, the validators are operated by separate entities from the network
 operator.
 
-The `genesis.dat` artifact contains the genesis block followed by its full protocol configuration. Bootstrap commands
-verify that the configuration matches the commitment in the genesis header. The node store saves the configuration for
-lookup by commitment. Distribute this complete artifact through the file or hosted URL procedure below.
-
-Block-only genesis files are not supported. Generate the complete artifact and bootstrap into empty data directories.
-Existing databases require a fresh bootstrap; database migration does not recover a missing protocol configuration.
-
 The genesis block is subsequently made available for official networks at
 
 ```text

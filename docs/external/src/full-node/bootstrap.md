@@ -12,11 +12,6 @@ import Tabs from "@theme/Tabs"; import TabItem from "@theme/TabItem";
 A full node must perform one-time initialization by bootstrapping its local chain state to the target network's genesis
 block.
 
-The genesis source must contain both the block and its full protocol configuration in the same `genesis.dat` artifact.
-Bootstrap verifies the configuration commitment and stores the configuration with the genesis state. Obtain the complete
-artifact from the network operator. Block-only files and databases without the configuration require a fresh bootstrap
-into an empty data directory.
-
 <Tabs groupId="full-node-runtime" defaultValue="native">
   <TabItem value="native" label="Native binary">
 

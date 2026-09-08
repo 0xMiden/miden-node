@@ -5,6 +5,7 @@ use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::{DbReader, DbWriter};
 use miden_node_tracing::{info, miden_instrument};
 use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::transaction::TransactionId;
 
 use crate::db::migrations::{bootstrap_database, migrate_database, verify_latest_schema};
@@ -68,6 +69,16 @@ impl ValidatorDbReader {
     ) -> Result<Option<BlockHeader>, DatabaseError> {
         self.reader
             .read("load_block_header", move |tx| queries::load_block_header(tx, block_num))
+            .await
+    }
+
+    /// Loads and verifies the protocol configuration with the given commitment.
+    pub async fn load_protocol_config(
+        &self,
+        commitment: miden_protocol::Word,
+    ) -> Result<Option<ProtocolConfig>, DatabaseError> {
+        self.reader
+            .read("load_protocol_config", move |tx| queries::load_protocol_config(tx, commitment))
             .await
     }
 
@@ -186,18 +197,60 @@ impl ValidatorDbWriter {
             .await
     }
 
-    /// Persists a block header, replacing any header already stored at the same height.
+    /// Persists a protocol configuration and its block header in one transaction.
+    ///
+    /// If `protocol_config` is absent, the configuration must already be stored.
     #[miden_instrument(
         target = COMPONENT,
     )]
-    pub(crate) async fn upsert_block_header(
+    pub(crate) async fn upsert_block_header_with_protocol_config(
         &self,
         header: BlockHeader,
+        protocol_config: Option<ProtocolConfig>,
     ) -> Result<(), DatabaseError> {
         self.writer
-            .write("upsert_block_header", move |tx| queries::upsert_block_header(tx, &header))
+            .write("upsert_block_header_with_protocol_config", move |tx| {
+                queries::ensure_protocol_config(
+                    tx,
+                    header.protocol_config_commitment(),
+                    protocol_config.as_ref(),
+                )?;
+                queries::upsert_block_header(tx, &header)
+            })
             .await
     }
+}
+
+/// Replaces a stored protocol configuration with test bytes.
+#[cfg(test)]
+pub(crate) async fn overwrite_protocol_config_for_test(
+    db: &ValidatorDbWriter,
+    commitment: miden_protocol::Word,
+    bytes: Vec<u8>,
+) -> Result<(), DatabaseError> {
+    db.writer
+        .write("overwrite_protocol_config_for_test", move |tx| {
+            tx.execute(
+                "UPDATE protocol_configs SET protocol_config = ?2 WHERE commitment = ?1",
+                &[&commitment, &bytes],
+            )?;
+            Ok::<_, DatabaseError>(())
+        })
+        .await
+}
+
+/// Deletes a stored protocol configuration for a test.
+#[cfg(test)]
+pub(crate) async fn delete_protocol_config_for_test(
+    db: &ValidatorDbWriter,
+    commitment: miden_protocol::Word,
+) -> Result<(), DatabaseError> {
+    db.writer
+        .write("delete_protocol_config_for_test", move |tx| {
+            tx.execute("DELETE FROM protocol_configs WHERE commitment = ?1", &[&commitment])?;
+            Ok::<_, DatabaseError>(())
+        })
+        .await
 }
 
 // LIFECYCLE
@@ -259,10 +312,12 @@ pub async fn bootstrap(
     database_filepath: PathBuf,
     connection_pool_size: NonZeroUsize,
     genesis_header: BlockHeader,
+    protocol_config: ProtocolConfig,
 ) -> Result<(), DatabaseError> {
     let db = setup_with_pool_size(database_filepath, connection_pool_size).await?;
 
-    db.upsert_block_header(genesis_header).await
+    db.upsert_block_header_with_protocol_config(genesis_header, Some(protocol_config))
+        .await
 }
 
 /// Applies all pending migrations to an existing DB.
@@ -294,9 +349,14 @@ fn open_with_pool_size(
 
 #[cfg(test)]
 mod tests {
+    use miden_node_utils::fee::{test_fee_params, test_protocol_config};
     use miden_protocol::Word;
+    use miden_protocol::asset::AssetId;
+    use miden_protocol::block::{BlockHeader, ValidatorConfig};
     use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
-    use miden_protocol::utils::serde::Deserializable;
+    use miden_protocol::protocol_config::ProtocolConfig;
+    use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1;
+    use miden_protocol::utils::serde::{Deserializable, Serializable};
     use rand_chacha_03::ChaCha20Rng;
     use rand_chacha_03::rand_core::SeedableRng;
 
@@ -329,6 +389,22 @@ mod tests {
             .unwrap()
     }
 
+    fn genesis_header(config: &miden_protocol::protocol_config::ProtocolConfig) -> BlockHeader {
+        miden_node_store::GenesisState::new(
+            vec![],
+            test_fee_params(),
+            1,
+            0,
+            ValidatorConfig::new(vec![SigningKey::new().public_key()], 1).unwrap(),
+            config.clone(),
+        )
+        .into_block()
+        .unwrap()
+        .inner()
+        .header()
+        .clone()
+    }
+
     #[test]
     fn migrate_rejects_missing_database() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
@@ -347,6 +423,127 @@ mod tests {
 
         setup(db_path.clone()).await.expect("setup should bootstrap the database");
         load(db_path).await.expect("load should accept a bootstrapped database");
+    }
+
+    #[tokio::test]
+    async fn setup_creates_protocol_config_storage() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
+        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+
+        let row_count = db
+            .reader
+            .reader
+            .read("protocol_config_storage", |tx| {
+                Ok::<_, DatabaseError>(
+                    tx.query("SELECT COUNT(*) FROM protocol_configs", &[], |row| {
+                        row.get::<i64>(0)
+                    })?
+                    .into_iter()
+                    .next()
+                    .expect("COUNT always returns one row"),
+                )
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(row_count, 0);
+    }
+
+    #[tokio::test]
+    async fn block_header_and_protocol_config_are_persisted_together() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
+        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let config = test_protocol_config();
+        let header = genesis_header(&config);
+
+        db.upsert_block_header_with_protocol_config(header.clone(), Some(config.clone()))
+            .await
+            .unwrap();
+
+        assert_eq!(db.load_chain_tip().await.unwrap(), Some(header));
+        assert_eq!(db.load_protocol_config(config.to_commitment()).await.unwrap(), Some(config));
+    }
+
+    #[tokio::test]
+    async fn unknown_protocol_config_rolls_back_block_header() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
+        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let config = test_protocol_config();
+        let header = genesis_header(&config);
+
+        db.upsert_block_header_with_protocol_config(header.clone(), None)
+            .await
+            .expect_err("an unknown protocol config must reject the header");
+
+        assert_eq!(db.load_block_header(header.block_num()).await.unwrap(), None);
+        assert_eq!(db.load_protocol_config(config.to_commitment()).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn protocol_config_reads_reject_trailing_bytes() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
+        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let config = test_protocol_config();
+        let commitment = config.to_commitment();
+        let mut bytes = config.to_bytes();
+        bytes.push(0xff);
+        db.writer
+            .write("insert_corrupt_protocol_config", move |tx| {
+                tx.execute(
+                    "INSERT INTO protocol_configs (commitment, protocol_config) VALUES (?1, ?2)",
+                    &[&commitment, &bytes],
+                )?;
+                Ok::<_, DatabaseError>(())
+            })
+            .await
+            .unwrap();
+
+        db.load_protocol_config(commitment)
+            .await
+            .expect_err("trailing bytes must be rejected");
+    }
+
+    #[tokio::test]
+    async fn protocol_config_reads_reject_a_wrong_storage_key() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
+        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let config = test_protocol_config();
+        let wrong_commitment = Word::empty();
+        let bytes = config.to_bytes();
+        db.writer
+            .write("insert_miskeyed_protocol_config", move |tx| {
+                tx.execute(
+                    "INSERT INTO protocol_configs (commitment, protocol_config) VALUES (?1, ?2)",
+                    &[&wrong_commitment, &bytes],
+                )?;
+                Ok::<_, DatabaseError>(())
+            })
+            .await
+            .unwrap();
+
+        db.load_protocol_config(wrong_commitment)
+            .await
+            .expect_err("a config stored under the wrong commitment must be rejected");
+    }
+
+    #[tokio::test]
+    async fn mismatched_protocol_config_rolls_back_block_header() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
+        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let expected = test_protocol_config();
+        let header = genesis_header(&expected);
+        let mismatched = ProtocolConfig::current(AssetId::new_fungible(
+            ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into().unwrap(),
+        ))
+        .unwrap();
+
+        db.upsert_block_header_with_protocol_config(header.clone(), Some(mismatched.clone()))
+            .await
+            .expect_err("a mismatched config must reject the header transaction");
+
+        assert_eq!(db.load_block_header(header.block_num()).await.unwrap(), None);
+        assert_eq!(db.load_protocol_config(expected.to_commitment()).await.unwrap(), None);
+        assert_eq!(db.load_protocol_config(mismatched.to_commitment()).await.unwrap(), None);
     }
 
     #[tokio::test]

@@ -21,6 +21,10 @@ for use by trusted internal nodes.
 
 It supports local development keys and KMS-backed signing for deployments that need external key management.
 
+Validator databases created before protocol configuration storage was added are not compatible with this version. Keep
+the old database as a backup, then bootstrap a new validator data directory from the trusted genesis file. There is no
+migration or import step for the old validator database.
+
 ## License
 
 This project is [MIT licensed](../../LICENSE).

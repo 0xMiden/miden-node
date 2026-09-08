@@ -56,15 +56,34 @@ impl proto::server::rpc_api::SyncChainMmr for RpcService {
         }
 
         let block_range = current_client_block_height..=sync_target;
+        let view = self.state.view();
         let (mmr_delta, block_header, block_signatures) =
-            self.state.view().sync_chain_mmr(block_range.clone()).await.map_err(
-                |err| match err {
-                    StateSyncError::RangeBeyondTip(_) => Status::invalid_argument(err.to_string()),
-                    _ => Status::internal(err.to_string()),
-                },
-            )?;
+            view.sync_chain_mmr(block_range.clone()).await.map_err(|err| match err {
+                StateSyncError::RangeBeyondTip(_) => Status::invalid_argument(err.to_string()),
+                _ => Status::internal(err.to_string()),
+            })?;
+
+        let include_config = if current_client_block_height == BlockNumber::GENESIS {
+            true
+        } else if current_client_block_height == sync_target {
+            false
+        } else {
+            let (start, _) = view
+                .get_block_header(Some(current_client_block_height), false)
+                .await
+                .map_err(super::get_block_header_error_to_status)?;
+            let start =
+                start.ok_or_else(|| Status::internal("starting block header is missing"))?;
+            start.protocol_config_commitment() != block_header.protocol_config_commitment()
+        };
+        let protocol_config = if include_config {
+            Some(super::load_protocol_config(&view, &block_header).await?.into())
+        } else {
+            None
+        };
 
         Ok(proto::rpc::SyncChainMmrResponse {
+            protocol_config,
             block_range: Some(proto::rpc::BlockRange {
                 block_from: block_range.start().as_u32(),
                 block_to: block_range.end().as_u32(),

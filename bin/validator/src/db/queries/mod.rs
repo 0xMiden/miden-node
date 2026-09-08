@@ -8,6 +8,9 @@
 
 mod private_record_row;
 
+mod protocol_config;
+pub use protocol_config::{ensure as ensure_protocol_config, load as load_protocol_config};
+
 mod count_signed_blocks;
 pub use count_signed_blocks::count_signed_blocks;
 

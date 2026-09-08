@@ -20,6 +20,7 @@ use miden_protocol::block::nullifier_tree::{NullifierMutationSet, NullifierTree}
 use miden_protocol::block::{BlockBody, BlockHeader, BlockNumber, Blockchain, SignedBlock};
 use miden_protocol::crypto::merkle::smt::LargeSmt;
 use miden_protocol::note::{NoteDetails, Nullifier};
+use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::utils::serde::Serializable;
 use rayon::ThreadPool;
@@ -160,7 +161,10 @@ impl WriteWorker {
                     None => break,
                 },
             };
-            let result = self.write_block(req.signed_block).instrument(req.span).await;
+            let result = self
+                .write_block(req.signed_block, req.protocol_config)
+                .instrument(req.span)
+                .await;
             let _ = req.result_tx.send(result);
         }
     }
@@ -186,7 +190,11 @@ impl WriteWorker {
         target = COMPONENT,
         err,
     )]
-    async fn write_block(&mut self, signed_block: SignedBlock) -> Result<(), ApplyBlockError> {
+    async fn write_block(
+        &mut self,
+        signed_block: SignedBlock,
+        protocol_config: Option<ProtocolConfig>,
+    ) -> Result<(), ApplyBlockError> {
         let header = signed_block.header();
         let body = signed_block.body();
 
@@ -201,6 +209,21 @@ impl WriteWorker {
         );
 
         self.validate_block_header(header).await?;
+        let commitment = header.protocol_config_commitment();
+        if let Some(config) = protocol_config.as_ref() {
+            let calculated = config.to_commitment();
+            if calculated != commitment {
+                return Err(crate::errors::DatabaseError::ProtocolConfigCommitmentMismatch {
+                    expected: commitment,
+                    calculated,
+                }
+                .into());
+            }
+        }
+        let stored = self.db.select_protocol_config_by_commitment(commitment).await?;
+        if stored.is_none() && protocol_config.is_none() {
+            return Err(crate::errors::DatabaseError::ProtocolConfigNotFound(commitment).into());
+        }
 
         let block_lifecycle =
             lifecycle_events_enabled().then(|| BlockLifecycle::from_block_body(block_num, body));
@@ -237,6 +260,7 @@ impl WriteWorker {
             .db
             .apply_block(
                 signed_block,
+                protocol_config,
                 notes,
                 precomputed_public_states,
                 unresolved_note_nullifiers,

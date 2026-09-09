@@ -288,6 +288,15 @@ impl proto::rpc::BlockRange {
     }
 }
 
+impl From<RangeInclusive<BlockNumber>> for proto::rpc::BlockRange {
+    fn from(range: RangeInclusive<BlockNumber>) -> Self {
+        Self {
+            block_from: range.start().as_u32(),
+            block_to: range.end().as_u32(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod block_range_tests {
     use super::*;
@@ -326,14 +335,5 @@ mod block_range_tests {
             .expect("ascending range must be accepted");
         assert_eq!(*got.start(), BlockNumber::from(1u32));
         assert_eq!(*got.end(), BlockNumber::from(3u32));
-    }
-}
-
-impl From<RangeInclusive<BlockNumber>> for proto::rpc::BlockRange {
-    fn from(range: RangeInclusive<BlockNumber>) -> Self {
-        Self {
-            block_from: range.start().as_u32(),
-            block_to: range.end().as_u32(),
-        }
     }
 }

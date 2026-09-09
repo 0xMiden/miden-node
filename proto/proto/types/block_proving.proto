@@ -40,5 +40,5 @@ message BlockProofRequest {
 
   // The active configuration for signing. May be omitted if the validator already stores it.
   // Proving-only callers may omit this field.
-  protocol_config.ProtocolConfig protocol_config = 6;
+  optional protocol_config.ProtocolConfig protocol_config = 6;
 }

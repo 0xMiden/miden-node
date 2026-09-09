@@ -80,19 +80,38 @@ impl grpc::server::validator_api::BlockSubscription for ValidatorService {
 
         tokio::spawn({
             let store = self.block_store.clone();
+            let db = self.db.reader();
             async move {
+                let mut previous_config_commitment = None;
                 for block in from.as_u32()..=committed_tip.as_u32() {
                     let response = match store.load_block(block.into()).await {
-                        Ok(Some(block)) => SignedBlock::read_from_bytes(&block)
-                            .map(|block| BlockSubscriptionResponse {
-                                block: Some(block.into()),
-                                committed_chain_tip: committed_tip.as_u32(),
-                            })
-                            .map_err(|err| {
-                                tonic::Status::internal(
-                                    err.as_report_context("failed to decode backed-up block"),
-                                )
-                            }),
+                        Ok(Some(bytes)) => match SignedBlock::read_from_bytes(&bytes) {
+                            Ok(signed_block) => {
+                                let commitment = signed_block.header().protocol_config_commitment();
+                                match db.load_protocol_config(commitment).await {
+                                    Ok(Some(config)) => {
+                                        let protocol_config = (previous_config_commitment
+                                            != Some(commitment))
+                                        .then(|| (&config).into());
+                                        previous_config_commitment = Some(commitment);
+                                        Ok(BlockSubscriptionResponse {
+                                            block: Some(signed_block.into()),
+                                            committed_chain_tip: committed_tip.as_u32(),
+                                            protocol_config,
+                                        })
+                                    },
+                                    Ok(None) => Err(tonic::Status::internal(format!(
+                                        "protocol config {commitment} not found"
+                                    ))),
+                                    Err(err) => Err(tonic::Status::internal(
+                                        err.as_report_context("failed to load protocol config"),
+                                    )),
+                                }
+                            },
+                            Err(err) => Err(tonic::Status::internal(
+                                err.as_report_context("failed to decode backed-up block"),
+                            )),
+                        },
                         Ok(None) => {
                             Err(tonic::Status::not_found(format!("block {block} not found")))
                         },

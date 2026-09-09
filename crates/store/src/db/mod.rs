@@ -637,12 +637,18 @@ impl Db {
     pub(crate) async fn apply_block(
         &self,
         signed_block: SignedBlock,
+        protocol_config: Option<ProtocolConfig>,
         notes: Vec<(NoteRecord, Option<Nullifier>)>,
         precomputed_public_states: PrecomputedPublicAccountStates,
         unresolved_note_nullifiers: Vec<Nullifier>,
         prune_tip: BlockNumber,
     ) -> Result<BTreeMap<Nullifier, NoteId>> {
         self.transact("apply block", move |conn| {
+            queries::ensure_protocol_config(
+                conn,
+                signed_block.header().protocol_config_commitment(),
+                protocol_config.as_ref(),
+            )?;
             models::queries::apply_block(conn, &signed_block, &notes, &precomputed_public_states)?;
             models::queries::prune_history(conn, prune_tip)?;
 

@@ -7,6 +7,7 @@ import "block.proto";
 import "note.proto";
 import "partial_blockchain.proto";
 import "primitives.proto";
+import "protocol_config.proto";
 
 // The requested account ID paired with the canonical account-tree witness.
 message AccountWitnessRecord {
@@ -36,4 +37,8 @@ message BlockProofRequest {
   fixed32 timestamp = 3;
   blockchain.ValidatorConfig next_validator_config = 4;
   optional blockchain.NextProtocolConfig next_protocol_config = 5;
+
+  // The active configuration for signing. May be omitted if the validator already stores it.
+  // Proving-only callers may omit this field.
+  protocol_config.ProtocolConfig protocol_config = 6;
 }

@@ -34,6 +34,18 @@ use crate::server::api::subscription::{IpBanList, MAX_REPLICA_SUBSCRIPTIONS};
 use crate::server::{NetworkTxAuth, RpcBackend};
 use crate::{COMPONENT, LOG_TARGET};
 
+/// Loads the configuration committed to by a stored header.
+async fn load_protocol_config(
+    view: &miden_node_store::state::StateView,
+    header: &BlockHeader,
+) -> tonic::Result<miden_protocol::protocol_config::ProtocolConfig> {
+    let commitment = header.protocol_config_commitment();
+    view.get_protocol_config(commitment)
+        .await
+        .map_err(|err| Status::internal(err.to_string()))?
+        .ok_or_else(|| Status::internal(format!("protocol config {commitment} is missing")))
+}
+
 // VALIDATOR FAN-OUT
 // ================================================================================================
 
@@ -165,6 +177,7 @@ impl RpcService {
                 proto::rpc::BlockHeaderByNumberRequest {
                     block_num: Some(BlockNumber::GENESIS.as_u32()),
                     include_mmr_proof: None,
+                    include_protocol_config: None,
                 }
                 .into_request(),
             )

@@ -664,7 +664,7 @@ message SyncChainMmrResponse {
     // The target header's active configuration. Included when the client starts at genesis or
     // the starting and target headers have different configuration commitments.
     // Verify its commitment against the target header.
-    protocol_config.ProtocolConfig protocol_config = 5;
+    optional protocol_config.ProtocolConfig protocol_config = 5;
 }
 
 // SYNC ACCOUNT STORAGE MAP

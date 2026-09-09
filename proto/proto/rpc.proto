@@ -250,7 +250,7 @@ message BlockHeaderByNumberResponse {
     optional fixed32 chain_length = 3;
 
     // Included when requested and the header exists. Verify its commitment against that header.
-    protocol_config.ProtocolConfig protocol_config = 4;
+    optional protocol_config.ProtocolConfig protocol_config = 4;
 }
 
 // GET BLOCK BY NUMBER

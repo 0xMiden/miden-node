@@ -234,7 +234,7 @@ message BlockHeaderByNumberRequest {
     optional uint32 block_num = 1;
     // Whether or not to return authentication data for the block header.
     optional bool include_mmr_proof = 2;
-    // Include the active configuration for the returned header. Defaults to false.
+    // Whether to include the active configuration for the returned header.
     optional bool include_protocol_config = 3;
 }
 
